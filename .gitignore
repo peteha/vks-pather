@@ -1,0 +1,19 @@
+# local working files — not part of the public repo
+.DS_Store
+*.pdf
+pg-*.jpg
+shot*.png
+__pycache__/
+tasks/
+
+# Broadcom matrix exports — export your own from interopmatrix.broadcom.com
+# (see README: "Getting the data"); not redistributed in this repo
+ESX/
+vCenter/
+NSX/
+Kuberenets Service/
+vSphere Supervisor/
+Workload K8/
+
+# customer-engagement artifacts (local only)
+docs/

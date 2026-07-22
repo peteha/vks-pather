@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>vSphere 8 VKS — Upgrade &amp; Interop Explorer</title>
+<script>
+// Visible failure instead of silently blank tabs: one syntax error in the main
+// script block would otherwise blank the whole page with no explanation.
+window.addEventListener("error", function(e){
+  if(document.getElementById("js-err") || !document.body) return;
+  var d = document.createElement("div");
+  d.id = "js-err";
+  d.style.cssText = "margin:16px 24px;padding:12px 16px;border:1px solid #d03b3b;border-left:4px solid #d03b3b;border-radius:8px;background:rgba(208,59,59,.08);font-size:13px";
+  d.textContent = "This page hit a script error — some tabs may be blank or incomplete. Reload the page; if it persists, rebuild index.html (python3 rebuild_explorer.py) and check the browser console. Detail: " + (e.message || "unknown error");
+  document.body.insertBefore(d, document.body.firstChild);
+});
+</script>
+<style>
+  :root{
+    --surface:#fcfcfb; --page:#f9f9f7; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+    --good:#0ca30c; --good-text:#006300; --crit:#d03b3b; --warn:#b97a00;
+    --line:#e4e3de; --accent:#2f5fd0; --chip:#eeede8;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --surface:#1a1a19; --page:#0d0d0d; --ink:#fff; --ink2:#c3c2b7; --muted:#898781;
+      --good-text:#5fd35f; --warn:#fab219; --line:#33322f; --accent:#7ba3f0; --chip:#262521;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  header{padding:20px 24px 0}
+  h1{font-size:19px;margin:0 0 2px}
+  .sub{color:var(--ink2);font-size:13px;margin:0 0 14px}
+  nav{display:flex;gap:2px;padding:0 24px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  nav button{background:none;border:none;border-bottom:2px solid transparent;padding:9px 14px;
+    font:inherit;font-size:13.5px;color:var(--ink2);cursor:pointer}
+  nav button.on{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+  main{padding:18px 24px 48px;max-width:1200px}
+  section{display:none}section.on{display:block}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:0 0 14px}
+  .card h3{margin:0 0 8px;font-size:14.5px}
+  table{border-collapse:collapse;width:100%;font-size:13px}
+  th,td{padding:6px 10px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--ink2);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .s-ok{color:var(--good-text);font-weight:600}
+  .s-inc{color:var(--crit);font-weight:600}
+  .s-ns{color:var(--muted)}
+  .s-nd{color:var(--muted);font-style:italic}
+  .flag{border-left:3px solid var(--warn);padding:8px 12px;background:var(--chip);border-radius:0 8px 8px 0;margin:8px 0;font-size:13px}
+  .flag b{color:var(--warn)}
+  .pill{display:inline-block;background:var(--chip);border-radius:20px;padding:1px 10px;font-size:12px;color:var(--ink2);margin-right:6px}
+  select,input[type=text]{font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line);
+    border-radius:7px;background:var(--surface);color:var(--ink);max-width:340px}
+  label{font-size:12px;color:var(--ink2);display:block;margin:0 0 3px}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin:0 0 12px}
+  .step{display:flex;gap:14px;margin:0 0 12px}
+  .step .n{flex:0 0 30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;margin-top:2px}
+  .step .body{flex:1;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:12px 15px}
+  .step h4{margin:0 0 4px;font-size:14px}
+  .step p{margin:4px 0;color:var(--ink2);font-size:13px}
+  .ev{font-size:12.5px;color:var(--ink2);margin-top:6px}
+  .ev span{white-space:nowrap;margin-right:12px}
+  .arrow{color:var(--muted)}
+  .grid-wrap{overflow:auto;max-height:560px;border:1px solid var(--line);border-radius:8px}
+  .grid-wrap table{font-size:12px}
+  .grid-wrap th{position:sticky;top:0;background:var(--surface);z-index:2}
+  .grid-wrap th.rowh{position:sticky;left:0;background:var(--surface);z-index:1;text-transform:none;letter-spacing:0}
+  .grid-wrap th.corner{left:0;z-index:3}
+  .grid-wrap td{text-align:center;white-space:nowrap}
+  .path-chain{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}
+  .path-chain .node{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:6px 12px;font-weight:600;font-size:13px}
+  .path-chain .hop{color:var(--muted)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:840px){.two{grid-template-columns:1fr}}
+  .kv{display:grid;grid-template-columns:auto 1fr 1fr;gap:4px 16px;font-size:13px}
+  .kv .h{font-weight:600;color:var(--ink2);font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+  .small{font-size:12px;color:var(--muted)}
+  .legend{margin:6px 0 0;font-size:12.5px;color:var(--ink2)}
+  .legend span{margin-right:14px;white-space:nowrap}
+  @media print{ header,nav,.row{display:none} section{display:none} section.on{display:block} .card,.step .body{break-inside:avoid} }
+</style>
+</head>
+<body>
+<header>
+  <h1>vSphere 8 VKS — Upgrade &amp; Interoperability Explorer</h1>
+  <p class="sub">Modeled from Broadcom interoperability &amp; upgrade matrix exports (12 CSVs from interopmatrix.broadcom.com, <span class="asof">16 Jul 2026</span>) · strategy: 9.1-ready hold on vSphere 8, then upgrade to 9.1 via 9.0.2 · <b>independent analysis — not Broadcom guidance (see note below)</b></p>
+</header>
+<nav id="tabs"></nav>
+<main id="main"><noscript><div class="flag" style="margin:16px 0">This explorer is a single-page application and needs JavaScript enabled — no data leaves the browser; everything is embedded in this one file.</div></noscript></main>
+<footer style="padding:18px 24px 36px;max-width:1200px">
+  <div style="border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:8px;padding:12px 16px;background:var(--surface);font-size:12.5px;color:var(--ink2);line-height:1.55">
+    <b style="color:var(--ink)">Data source:</b> official
+    <a href="https://interopmatrix.broadcom.com/Upgrade" target="_blank" rel="noopener noreferrer">Broadcom Product Interoperability Matrix</a>,
+    exported <b style="color:var(--ink)"><span class="asof">16 Jul 2026</span></b>.
+    Sequencing and impact commentary is the author’s interpretation, not Broadcom guidance. Not affiliated with Broadcom Inc.
+  </div>
+</footer>
+
+<script>__DATA__</script>
+<script>
+"use strict";
+// All version strings come from downloaded CSV exports — treat as data, never as markup.
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+if(DATA.asof) document.querySelectorAll(".asof").forEach(e=>{ e.textContent = DATA.asof; });
+const C = DATA.components;              // component names
+const CAT = DATA.catalog;               // ordered new->old
+const ST = DATA.statuses;               // Compatible / Incompatible / Not Supported
+const CUR = DATA.current;
+const BASE = Object.assign({}, CUR);    // shipped starting point, before any in-page edits
+const LABELS = {vCenter:"vCenter", ESX:"ESX", NSX:"NSX", Supervisor:"vSphere Supervisor",
+                VKS:"vSphere Kubernetes Service (VKS)", WorkloadK8s:"Workload cluster K8s release (TKr)", Addons:"VKS Add-ons / packages"};
+
+// ---- pair lookup ----
+const P = new Map();
+for(const [a,ai,b,bi,s] of DATA.pairs){
+  P.set(a+":"+ai+"|"+b+":"+bi, s);
+  P.set(b+":"+bi+"|"+a+":"+ai, s);
+}
+const VI = {}; C.forEach((c,i)=>{ VI[c]={}; CAT[c].forEach((v,j)=>VI[c][v]=j); });
+function pairStatus(ca,va,cb,vb){
+  const ai=VI[ca][va], bi=VI[cb][vb];
+  if(ai===undefined||bi===undefined) return null;
+  const s=P.get(C.indexOf(ca)+":"+ai+"|"+C.indexOf(cb)+":"+bi);
+  return s===undefined?null:ST[s];
+}
+// ---- upgrade adjacency (Compatible only) ----
+const ADJ = {}; C.forEach(c=>ADJ[c]={});
+const EDGE = new Map();
+for(const [ci,fi,ti,s] of DATA.edges){
+  const c=C[ci], f=CAT[c][fi], t=CAT[c][ti];
+  EDGE.set(c+"|"+f+">"+t, ST[s]);
+  if(ST[s]==="Compatible"){ (ADJ[c][f]=ADJ[c][f]||[]).push(t); }
+}
+function bfs(c, from, to){
+  if(from===to) return [from];
+  const q=[[from]], seen=new Set([from]);
+  while(q.length){
+    const path=q.shift(), last=path[path.length-1];
+    for(const nx of (ADJ[c][last]||[])){
+      if(seen.has(nx)) continue;
+      if(nx===to) return [...path,nx];
+      seen.add(nx); q.push([...path,nx]);
+    }
+  }
+  return null;
+}
+// ---- rendering helpers ----
+function statCell(s){
+  if(s===null) return '<span class="s-nd">· no data</span>';
+  if(s==="Compatible") return '<span class="s-ok">✓ Compatible</span>';
+  if(s==="Incompatible") return '<span class="s-inc">✕ Incompatible</span>';
+  return '<span class="s-ns">— Not Supported</span>';
+}
+function statShort(s){
+  if(s===null) return '<span class="s-nd">·</span>';
+  if(s==="Compatible") return '<span class="s-ok">✓</span>';
+  if(s==="Incompatible") return '<span class="s-inc">✕</span>';
+  return '<span class="s-ns">—</span>';
+}
+function sel(id, comp, value, extra){
+  const opts = CAT[comp].map(v=>`<option ${v===value?"selected":""}>${esc(v)}</option>`).join("");
+  return `<div><label>${extra||LABELS[comp]||comp}</label><select id="${id}">${opts}</select></div>`;
+}
+const LEGEND = `<p class="legend"><span class="s-ok">✓ Compatible</span><span class="s-inc">✕ Incompatible</span><span class="s-ns">— Not Supported</span><span class="s-nd">· not in matrices</span></p>`;
+
+// ================= TABS =================
+const TABS = [
+  ["overview","Overview"],["roadmap","Roadmap"],["deploy","Deployment plan"],["packages","Packages"],["path","Path finder"],
+  ["check","Compat checker"],["matrix","Matrix browser"]
+];
+const nav=document.getElementById("tabs"), main=document.getElementById("main");
+TABS.forEach(([id,name],i)=>{
+  const b=document.createElement("button"); b.textContent=name; b.className=i===0?"on":"";
+  b.onclick=()=>{ document.querySelectorAll("nav button").forEach(x=>x.className="");
+    b.className="on";
+    document.querySelectorAll("main section").forEach(x=>x.classList.remove("on"));
+    document.getElementById("sec-"+id).classList.add("on"); };
+  nav.appendChild(b);
+  const s=document.createElement("section"); s.id="sec-"+id; if(i===0)s.classList.add("on");
+  main.appendChild(s);
+});
+
+// ================= OVERVIEW =================
+const REC = {vCenter:"8.0U3h", ESX:"8.0U3h", NSX:"9.0.2.0",
+  Supervisor:"v1.31.11+vmware.1-fips-vsc0.1.13", VKS:"3.3.3", WorkloadK8s:"1.32.7", Addons:"v2025.8.19"};
+const END91 = {vCenter:"9.1.0.0", ESX:"9.1.0.0", NSX:"9.1.0.0",
+  Supervisor:"v1.32.9+vmware.2-fips-vsc9.1.0.0", VKS:"3.6.3 → 3.7.0", WorkloadK8s:"1.33.6+", Addons:"3.6.0/3.7.0 line"};
+function curSelect(c){
+  const opts=[];
+  if(CUR[c] && !CAT[c].includes(CUR[c])) opts.push(CUR[c]);
+  opts.push(...CAT[c]);
+  return `<select class="cursel" data-c="${c}" style="max-width:270px">${opts.map(v=>`<option ${v===CUR[c]?"selected":""}>${esc(v)}</option>`).join("")}</select>`;
+}
+document.getElementById("sec-overview").innerHTML = `
+<div class="card"><h3>Customer environment → 9.1-ready hold on vSphere 8 → vSphere 9.1</h3>
+<div class="kv" style="grid-template-columns:auto 1fr 1fr 1fr">
+  <div class="h">Component</div><div class="h">Current (editable)</div><div class="h">8.x hold (9.1-ready)</div><div class="h">9.1 end state</div>
+  ${["vCenter","ESX","NSX","Supervisor","VKS","WorkloadK8s","Addons"].map(c=>
+    `<div><b>${LABELS[c]}</b></div><div>${curSelect(c)}</div><div class="s-ok">${REC[c]}${c==="NSX"?' <span class="small" style="font-weight:400">(crosses early — see note)</span>':""}</div><div>${END91[c]}</div>`).join("")}
+</div>
+<p class="small" style="margin-top:10px">The <b>Current</b> column is editable — set the environment's actual versions and the “Load current state” preset in the Compat checker and the Path finder defaults follow. Versions below matrix coverage (e.g. TKr 1.26.13) are listed but have no data rows. The hold state is the newest set of 8.x versions from which every component still has a “Compatible” path to vSphere 9.x — newer 8.x patches exist (vCenter/ESX 8.0U3i/U3j, Supervisor vsc0.1.14/0.1.15, NSX 4.2.3.3/4.2.4.1) but several are 9.x dead ends; see below. <b>NSX is the one deliberate exception:</b> the hold shows NSX 9.0.2.0 because the vSphere-9 Supervisor builds (vsc9.x) list NSX 4.2.x as “Not Supported” — NSX must cross to 9.0.2.0 <i>before</i> the Supervisor crosses, and NSX 9.0.2.0 is “Compatible” with vCenter 8.0U3, ESX 8.0U3 and Supervisor vsc0.1.13, so it runs on the vSphere-8 stack in the meantime (roadmap step “NSX 4.2.2.1 → 9.0.2.0”). In the pre-9.1 handoff variant NSX instead holds at 4.2.2.1 and the crossing belongs to the 9.1 team. Recommended 9.x route is via 9.0.2 so workload clusters stay in supported combinations throughout; see Roadmap tab.</p>
+</div>
+
+<div class="two">
+<div class="card"><h3>9.x dead ends — do NOT take these (from the Upgrade matrices)</h3>
+<table><tbody>
+<tr><td>vCenter / ESX <b>8.0U3j</b></td><td class="s-inc">✕</td><td class="small">Incompatible to 9.0.x AND all 9.1 builds. Latest patch with a 9.1 path: <b>8.0U3i</b>; with both 9.0.2 + 9.1 paths: <b>8.0U3h</b></td></tr>
+<tr><td>Supervisor <b>vsc0.1.14 / vsc0.1.15</b></td><td class="s-inc">✕</td><td class="small">All cross-train upgrade rows to vsc9.x are Incompatible. Only <b>v1.31.11-vsc0.1.13</b> has Compatible rows to vsc9.0.2 and vsc9.1</td></tr>
+<tr><td>NSX <b>4.2.3.3</b></td><td class="s-inc">✕</td><td class="small">Incompatible to 9.0.2 (only 9.1 path), and Supervisor vsc9.x drops NSX 4.2.3 support. Instead: <b>4.2.2.1 → 9.0.2.0 direct</b> once Supervisor is at vsc0.1.13</td></tr>
+<tr><td>TKr on the 9.1 jump</td><td class="s-inc">✕</td><td class="small">No TKr is Compatible with BOTH vCenter 8.0U3 (max 1.32.7) and vCenter 9.1 (min 1.33.1). vCenter 9.0.x supports 1.31.1–1.36.1 — routing via <b>9.0.2</b> keeps workload clusters supported throughout</td></tr>
+</tbody></table>
+<h3 style="margin-top:14px">Hard ceilings while on vSphere 8</h3>
+<table><tbody>
+<tr><td>VKS</td><td><b>3.3.3</b></td><td class="small">3.4.0+ Not Supported with vCenter 8.0U3</td></tr>
+<tr><td>Workload TKr</td><td><b>1.32.7</b></td><td class="small">1.32.10+ Not Supported with vCenter 8.0U3</td></tr>
+<tr><td>Packages</td><td><b>VKS Add-ons v2025.8.19</b></td><td class="small">Compatible with TKr 1.32.7; replaces legacy Standard Packages v2023.9.19</td></tr>
+</tbody></table></div>
+
+<div class="card"><h3>Flags &amp; matrix gaps</h3>
+<div class="flag"><b>Workload clusters below coverage.</b> Matrices start at TKr 1.31.1; the running 1.26.13 clusters aren’t listed. K8s control planes step one minor at a time (1.26→…→1.31), so intermediate TKr availability must be confirmed against VKS/TKr release notes.</div>
+<div class="flag"><b>Supervisor upgrade rows missing for v1.28.3/v1.29.7.</b> The upgrade matrix only covers v1.30.10+ on the vSphere-8 line. Supervisor updates arrive via vCenter 8.0U3 async patches (vsc0.1.10→0.1.13) one K8s minor at a time.</div>
+<div class="flag"><b>Order constraints.</b> ① VKS 3.1.1 is Not Supported on Supervisor v1.31.11+ — upgrade VKS to 3.3.3 <u>before</u> stepping the Supervisor past v1.30.10. ② NSX 9.0.2 is Not Supported below Supervisor vsc0.1.13 — upgrade NSX <u>after</u> the Supervisor reaches vsc0.1.13.</div>
+<div class="flag"><b>Coarse vCenter rows.</b> Interop matrices list “vCenter 8.0U3”/“9.0.0.0” without patch letters, so Supervisor-vs-vCenter cells only bless the exact ship-vehicle patch (e.g. vsc0.1.9 on 8.0U3). The ESX rows confirm the real support span. Verify per-patch pairing in release notes.</div>
+<div class="flag"><b>Matrix data is a point-in-time export.</b> The 9.x “dead ends” (U3j, vsc0.1.14/15, 4.2.3.3) exist because those patches post-date the current 9.x builds; future 9.1 patches will likely open paths. Re-export from <a href="https://interopmatrix.broadcom.com/Upgrade" target="_blank" rel="noopener noreferrer">interopmatrix.broadcom.com/Upgrade</a> before each change window.</div>
+<div class="flag"><b>Packages folder was empty.</b> Add-on compatibility comes from the “VKS Add-ons” rows of the Workload-K8s matrix; legacy “Standard packages v2023.9.19” doesn’t appear in the matrices at all.</div>
+</div>
+</div>`;
+
+document.querySelectorAll(".cursel").forEach(el=>{
+  el.onchange=()=>{ CUR[el.dataset.c]=el.value; drawRoadmap(); pfSelects(); drawPlan(); };
+});
+
+// ================= ROADMAP =================
+const S_VKS = {chk:{c:'VKS',to:'3.3.3'}, t:"VKS 3.1.1 → 3.3.3", w:"Direct one-hop upgrade. 3.3.3 is the vSphere-8 ceiling and is compatible with everything currently running. Must precede any Supervisor move past v1.30.10 (VKS 3.1.1 is Not Supported on Supervisor v1.31.11+).",
+  ev:[["VKS 3.1.1 → 3.3.3 (upgrade)","Compatible"],["VKS 3.3.3 ↔ Supervisor v1.28.3-vsc0.1.9","Compatible"],["VKS 3.3.3 ↔ vCenter 8.0U3","Compatible"]]};
+const S_TKR = {chk:{c:'WorkloadK8s',to:'1.32.7'}, t:"Workload clusters 1.26.13 → 1.31.x → 1.32.7", w:"K8s steps one minor at a time; each step is a rolling node replacement of every cluster (drain + rebuild). 1.27→1.30 TKrs predate matrix coverage (verify availability); once on 1.31.4+ the matrix shows a direct hop to 1.32.7 — the vCenter 8.0U3 ceiling.",
+  ev:[["TKr 1.31.4 → 1.32.7 (upgrade)","Compatible"],["TKr 1.32.7 ↔ VKS 3.3.3","Compatible"],["TKr 1.32.7 ↔ vCenter 8.0U3","Compatible"]], flag:"Steps 1.26→1.31 not covered by the matrices — confirm intermediate TKrs in release notes. Pods not managed by a controller are deleted on node drain; single-replica apps take brief outages; bad PodDisruptionBudgets can wedge the roll."};
+const S_PKG = {chk:{c:'Addons',to:'v2025.8.19'}, t:"Packages → VKS Add-ons v2025.8.19", w:"Replace legacy Standard Packages (v2023.9.19) with the current VKS add-ons repository once workload clusters reach 1.31+/1.32.7. Packages were rebranded from the tanzu.* to *.kubernetes.vmware.com names at v2025.6.17 — updates cross that rename.",
+  ev:[["Add-ons v2025.8.19 ↔ TKr 1.32.7","Compatible"]], flag:"Legacy v2023.9.19 doesn’t appear in the matrices — no documented interop for the current state. Component versions inside each release (Calico ships in the TKr itself, not the standard packages): verify with kubectl get kr &lt;name&gt; -o yaml per TKr."};
+const S_VC_G = {chk:{c:'vCenter',to:'8.0U3g'}, t:"vCenter 8.0U3 → 8.0U3g", w:"First vCenter patch stage. U3g delivers the Supervisor async updates for K8s 1.29/1.30 and auto-upgrades Supervisors still on 1.27→1.28. Stopping here first is required because U3h drops Supervisor K8s 1.28/1.29 — the Supervisor must reach 1.30 before U3h.",
+  ev:[["vCenter 8.0U3 → 8.0U3g (upgrade)","Compatible"]], flag:"Management-plane-only change: no workload/VM impact; vSphere Client and Supervisor API briefly unavailable during services restart."};
+const S_SUP_A = {chk:{c:'Supervisor',toPrefix:'v1.30.10'}, t:"Supervisor v1.28.3-vsc0.1.9 → 1.29.7 → 1.30.10 (two windows)", w:"Step one K8s minor at a time via the vCenter async updates. CONFIRMED SUPPORTED: the interop matrix has no upgrade rows for Supervisors this old (its coverage starts at v1.30.10) but Broadcom's Supervisor 8.0 release notes document the path — each U3 patch delivers the next minors, U3g auto-upgrades 1.27→1.28, and U3h's prerequisite explicitly instructs 'Upgrade Supervisor Kubernetes version to at least 1.30' before applying it. Rolling control-plane replacement per step; clusters keep running but each step may trigger cluster rolling updates.",
+  ev:[],
+  flag:"The matrix has no rows for v1.28.3/v1.29.7 — a coverage gap, not a prohibition: the steps are supported and in fact mandatory before U3h (which drops Supervisor K8s 1.28/1.29). Source: vSphere Supervisor 8.0 Release Notes."};
+const S_VC_H = {chk:{c:'vCenter',to:'8.0U3h'}, t:"vCenter 8.0U3g → 8.0U3h", w:"Second vCenter patch stage, only after the Supervisor is on 1.30+. STOP at U3h: it is the last U3 patch with Compatible upgrade rows to BOTH 9.0.2 and 9.1. U3i keeps only the 9.1 path; U3j has NO 9.x path at all (all Incompatible).",
+  ev:[["vCenter 8.0U3g → 8.0U3h (upgrade)","Compatible"],["vCenter 8.0U3h → 9.0.2.0 (upgrade)","Compatible"],["vCenter 8.0U3h → 9.1.0.0 (upgrade)","Compatible"]], flag:"Hard prerequisite from the U3h release notes: Supervisor K8s ≥ 1.30 (U3h drops 1.28/1.29)."};
+const S_ESX_H = {chk:{c:'ESX',to:'8.0U3h'}, t:"ESX 8.0U3 → 8.0U3h (all hosts)", w:"Rolling per-host via vLCM: DRS/vMotion evacuates each host into maintenance mode — VMs (incl. VKS node VMs) live-migrate, no workload downtime for multi-host clusters. Done after vCenter (vCenter must be ≥ ESX).",
+  ev:[["ESX 8.0U3 → 8.0U3h (upgrade)","Compatible"],["ESX 8.0U3h → 9.1.0.0 (upgrade)","Compatible"]]};
+const S_SUP13 = {chk:{c:'Supervisor',to:'v1.31.11+vmware.1-fips-vsc0.1.13'}, t:"Supervisor v1.30.10 → v1.31.11-vsc0.1.13 — PARK", w:"Final vSphere-8 Supervisor step. Park at v1.31.11-vsc0.1.13: it is the ONLY vSphere-8 Supervisor with Compatible cross-train rows to vsc9.0.2 and vsc9.1. Do NOT apply vsc0.1.14/vsc0.1.15 even if offered — their 9.x rows are all Incompatible.",
+  ev:[["Sup. v1.30.10-vsc0.1.14 → v1.31.11-vsc0.1.14 (upgrade)","Compatible"],["Sup. v1.31.11-vsc0.1.13 → v1.32.9-vsc9.1.0.0 (upgrade)","Compatible"],["Sup. v1.31.11-vsc0.1.13 → v1.32.9-vsc9.0.2.0 (upgrade)","Compatible"],["Sup. v1.31.11-vsc0.1.13 ↔ VKS 3.3.3","Compatible"],["Sup. v1.31.11-vsc0.1.13 ↔ ESX 8.0U3","Compatible"]]};
+const S_NSX902 = {chk:{c:'NSX',to:'9.0.2.0'}, t:"NSX 4.2.2.1 → 9.0.2.0 (direct)", w:"One documented hop, done AFTER the Supervisor reaches vsc0.1.13 (NSX 9.0.2 is Not Supported below it). Do NOT go via 4.2.3.3 — its upgrade row to 9.0.2 is Incompatible, and Supervisor vsc9.x drops NSX 4.2.3 entirely. NSX 9.0.2 is Compatible with the vCenter/ESX 8.0U3 line, so this lands while still on vSphere 8. Edge upgrade = brief N/S traffic interruptions per edge failover; host phase per-host in maintenance mode; manager phase no data-plane impact.",
+  ev:[["NSX 4.2.2.1 → 9.0.2.0 (upgrade)","Compatible"],["NSX 9.0.2.0 ↔ vCenter 8.0U3","Compatible"],["NSX 9.0.2.0 ↔ ESX 8.0U3","Compatible"],["NSX 9.0.2.0 ↔ Sup. v1.31.11-vsc0.1.13","Compatible"],["NSX 9.0.2.0 → 9.1.0.0 (upgrade)","Compatible"]]},
+S_91A = {chk:{c:'vCenter',to:'9.0.2.0'}, t:"9.x jump — vCenter & ESX 8.0U3h → 9.0.2.0, Supervisor → v1.32.9-vsc9.0.2", w:"vCenter first, then hosts, then Supervisor. On 9.0.2 every current piece stays supported: TKr 1.32.7 and VKS 3.3.3 are Compatible with vCenter 9.0.x — no unsupported workload window.",
+  ev:[["vCenter 8.0U3h → 9.0.2.0 (upgrade)","Compatible"],["ESX 8.0U3h → 9.0.2.0 (upgrade)","Compatible"],["Sup. vsc0.1.13 → v1.32.9-vsc9.0.2.0 (upgrade)","Compatible"],["TKr 1.32.7 ↔ vCenter 9.0.0.0","Compatible"],["VKS 3.3.3 ↔ vCenter 9.0.0.0","Compatible"]]},
+S_91B = {chk:{c:'VKS',to:'3.6.3+1.35'}, t:"On 9.0.2: VKS 3.3.3 → 3.6.3, then workload clusters 1.32.7 → 1.33.6", w:"Both direct hops per the matrices. This clears the TKr floor for 9.1 (vCenter 9.1 supports only TKr 1.33.1+).",
+  ev:[["VKS 3.3.3 → 3.6.3 (upgrade)","Compatible"],["VKS 3.6.3 ↔ Sup. vsc9.0.2.0","Compatible"],["TKr 1.32.7 → 1.33.6 (upgrade)","Compatible"],["TKr 1.33.6 ↔ vCenter 9.0.0.0","Compatible"]]},
+S_91C = {chk:{c:'vCenter',to:'9.1.0.0'}, t:"9.0.2 → 9.1: vCenter, ESX, Supervisor → vsc9.1, NSX → 9.1", w:"All documented Compatible hops. End state fully validated: every pairwise combination Compatible. Optionally VKS 3.6.3 → 3.7.0 and add-ons to the 3.6.0/3.7.0 line afterwards.",
+  ev:[["vCenter 9.0.2.0 → 9.1.0.0 (upgrade)","Compatible"],["ESX 9.0.2.0 → 9.1.0.0 (upgrade)","Compatible"],["Sup. vsc9.0.2.0 → vsc9.1.0.0 (upgrade)","Compatible"],["NSX 9.0.2.0 → 9.1.0.0 (upgrade)","Compatible"],["VKS 3.6.3 ↔ vCenter 9.1.0.0","Compatible"],["TKr 1.33.6 ↔ vCenter 9.1.0.0","Compatible"]]};
+
+const SEQ_91 = [S_VKS, S_TKR, S_VC_G, S_SUP_A, S_VC_H, S_ESX_H, S_SUP13, S_NSX902, S_PKG, S_91A, S_91B, S_91C];
+const S_HANDOFF = {t:"HANDOFF — stop here; the 9.1 team chooses upgrade or migrate", w:"NSX deliberately stays at 4.2.2.1 (9.x-open; its one documented move is 4.2.2.1 → 9.0.2.0 direct, which belongs to the incoming team since it must land between Supervisor vsc0.1.13 and the vsc9.x crossing). At this state every component sits on the newest release that keeps a Compatible 9.x path. Option A — in-place upgrade: run the recommended variant's 9.x phase (NSX → 9.0.2, then vCenter/ESX → 9.0.2, Supervisor → vsc9.0.2, VKS 3.6.3, TKr 1.33.6, then everything → 9.1). Option B — migrate: greenfield VCF 9.1, move VMs with HCX 9.1 (Compatible with BOTH ESX 8.0U3 and ESX 9.1 per the matrix), and move K8s workloads at app level (Velero / GitOps redeploy onto fresh VKS 3.7 / TKr 1.36 clusters) — the supported TKr 1.32.7 + v2025.8.19 package state makes app export clean.",
+  ev:[["vCenter 8.0U3h → 9.0.2.0 / 9.1.0.0 (upgrade)","Compatible"],["ESX 8.0U3h → 9.0.2.0 / 9.1.0.0 (upgrade)","Compatible"],["NSX 4.2.2.1 → 9.0.2.0 (upgrade)","Compatible"],["Sup. vsc0.1.13 → vsc9.0.2 / vsc9.1 (upgrade)","Compatible"],["HCX 9.1.0.0 ↔ ESX 8.0U3","Compatible"],["HCX 9.1.0.0 ↔ ESX 9.1.0.0","Compatible"]],
+  flag:"Re-export the matrices when the 9.1 team arrives — newer 9.1 patches may have opened more paths (or retired these rows) by then. Hand them this explorer and the change pack: Phase B (CR-11 to CR-17) is their in-place runbook."};
+const SEQ_HANDOFF = [S_VKS, S_TKR, S_VC_G, S_SUP_A, S_VC_H, S_ESX_H, S_SUP13, S_PKG, S_HANDOFF];
+const SEQ_MAX8 = [S_VKS, S_TKR,
+ {t:"vCenter 8.0U3 → 8.0U3j, ESX → 8.0U3j", w:"Maximum patch currency on 8.x — but U3j currently has NO Compatible path to any 9.x build. Only choose this if the 9.1 project is distant; re-export the matrix before committing (future 9.1 patches will likely open a path from U3j).",
+  ev:[["vCenter 8.0U3 → 8.0U3j (upgrade)","Compatible"],["vCenter 8.0U3j → 9.1.0.0 (upgrade)","Incompatible"]], flag:"9.x dead end as of this matrix export."},
+ {t:"Supervisor → v1.32.9-vsc0.1.15 · NSX → 4.2.3.3 · packages v2025.8.19", w:"The stay-on-8 ceilings: Supervisor v1.32.9-vsc0.1.15 (not v1.33.9 — drops VKS 3.3.3), NSX 4.2.3.x (4.2.4 unsupported vs most Supervisors). Both are also 9.x dead ends today.",
+  ev:[["Sup. v1.32.9-vsc0.1.15 ↔ VKS 3.3.3","Compatible"],["NSX 4.2.3 ↔ Sup. v1.32.9-vsc0.1.15","Compatible"]]}];
+const SEQ_MIN = [S_VKS,
+ {chk:{c:'WorkloadK8s',toPrefix:'1.31.'}, t:"Workload clusters 1.26.13 → 1.31.4+ (1.32.7 recommended)", w:"The minimum for a supported state: TKr 1.26.13 is out of support and below matrix coverage. Land at 1.31.4 or later (five rolls per cluster); 1.32.7 (one more roll) is recommended — it is the 8.x ceiling, and 1.31.x is closer to end-of-support. Both are Compatible with VKS 3.3.3, vCenter 8.0U3 and vCenter 9.0.x, so neither blocks the 9.x route.",
+  ev:[["TKr 1.31.4 ↔ VKS 3.3.3","Compatible"],["TKr 1.31.4 ↔ vCenter 8.0U3","Compatible"],["TKr 1.32.7 ↔ vCenter 8.0U3","Compatible"]],
+  flag:"Steps 1.26→1.31 not covered by the matrices — confirm intermediate TKrs in release notes. Same rolling-node impact as the recommended variant."},
+ {chk:{c:'Addons',to:'v2025.8.19'}, t:"Packages v2023.9.19 → VKS Add-ons v2025.8.19", w:"Required for a documented/supported package state — the legacy repo has no interop rows at all against TKr 1.31/1.32. See the Packages tab for contents, dependency deltas (FluxCD/Multus/Whereabouts/Grafana) and release-notes links.",
+  ev:[["Add-ons v2025.8.19 ↔ TKr 1.32.7","Compatible"],["Add-ons v2025.8.19 ↔ TKr 1.31.4","Compatible"]]},
+ {t:"HOLD everything else — all 9.x doors stay open", w:"vCenter 8.0U3 GA, ESX 8.0U3 GA, NSX 4.2.2.1 and Supervisor v1.28.3-vsc0.1.9 all stay put. Every one of them keeps a Compatible 9.x path — the GA builds actually have MORE 9.x doors open than the newest patches (U3j, vsc0.1.14/15 are the dead ends). The Supervisor's 9.x crossing is deferred, not blocked: when the 9.x project starts, run the recommended variant's steps 3–8 first (vCenter→U3g, Supervisor→1.30, vCenter→U3h, ESX, Supervisor→vsc0.1.13, NSX→9.0.2) — that work moves into the 9.x project rather than disappearing.",
+  ev:[["vCenter 8.0U3 → 9.0.2.0 (upgrade)","Compatible"],["vCenter 8.0U3 → 9.1.0.0 (upgrade)","Compatible"],["ESX 8.0U3 → 9.0.2.0 (upgrade)","Compatible"],["NSX 4.2.2.1 → 9.0.2.0 (upgrade)","Compatible"],["NSX 4.2.2.1 → 9.1.0.0 (upgrade)","Compatible"],["Sup. v1.28.3 ↔ VKS 3.3.3","Compatible"]],
+  flag:"Costs of holding: Supervisor stays on K8s 1.28 (EOL upstream) and vCenter/ESX/NSX take no security patches — flag CVE exposure to the customer. Matrices are a point-in-time export: re-confirm the held versions' 9.x rows before starting the 9.x project."}];
+function stepStatus(chk){
+  if(!chk) return "";
+  const cur = CUR[chk.c];
+  if(!cur) return "";
+  const cat = CAT[chk.c];
+  const curIdx = cat.indexOf(cur);
+  let done=false, tIdx=-1;
+  if(chk.toPrefix){ done = cur.startsWith(chk.toPrefix); tIdx = cat.findIndex(v=>v.startsWith(chk.toPrefix)); }
+  else { done = (cur===chk.to); tIdx = cat.indexOf(chk.to); }
+  if(done) return '<span class="pill" style="color:var(--good-text)">✓ current state already here</span>';
+  if(curIdx>=0 && tIdx>=0 && curIdx<tIdx) return '<span class="pill" style="color:var(--warn)">current state is PAST this target ('+esc(cur)+') — re-verify this step’s applicability and 9.x paths</span>';
+  return '<span class="pill">applies from current: '+esc(cur)+'</span>';
+}
+function roadmapHTML(seq){
+  return seq.map((s,i)=>`<div class="step"><div class="n">${i+1}</div><div class="body">
+    <h4>${s.t} ${stepStatus(s.chk)}</h4><p>${s.w}</p>
+    ${s.ev.length?`<div class="ev">${s.ev.map(([k,v])=>`<span>${k}: ${v==="Compatible"?'<span class="s-ok">✓</span>':statShort(v)}</span>`).join("")}</div>`:""}
+    ${s.flag?`<div class="flag">${s.flag}</div>`:""}
+  </div></div>`).join("");
+}
+// Explainer data for the four plan/roadmap variants. The Roadmap shows the full
+// comparison table (that is where the choice is made); the Deployment plan shows
+// only the selected variant's row.
+const VARIANT_INFO = {
+  handoff:{name:"Pre-9.1 handoff", rec:true,
+    does:"Brings every component to the newest release that still has a “Compatible” path to vSphere 9 — vCenter/ESX 8.0U3h, vSphere Supervisor v1.31.11 (build vsc0.1.13), VKS 3.3.3, workload clusters TKr 1.32.7, VKS Standard Packages v2025.8.19; NSX deliberately holds at 4.2.2.1 — then stops. The incoming 9.1 team upgrades in place or migrates.",
+    when:"The vSphere 9.1 move belongs to a later project or team; this engagement ends at a 9.1-ready hold."},
+  v91:{name:"Full path to 9.1 via 9.0.2",
+    does:"The complete sequence to vCenter/ESX/NSX 9.1: the same hold steps, then NSX 4.2.2.1 → 9.0.2.0, the crossing to vSphere 9.0.2, VKS 3.6.3 + workload clusters TKr 1.33.6, and the final hop to 9.1. Routed via 9.0.2 because no workload TKr is supported on both vCenter 8.0U3 and vCenter 9.1.",
+    when:"One team runs the whole journey to 9.1 as a single project."},
+  min:{name:"Minimal supported, 9.1-open",
+    does:"The smallest change set that reaches a supported state: only VKS (→ 3.3.3), the workload clusters (→ TKr 1.31.4+/1.32.7) and the packages move. vCenter, ESX, NSX and the vSphere Supervisor hold — every held version keeps a “Compatible” 9.x path.",
+    when:"Change windows are scarce and 9.1 timing is unknown. Cost: the held components take no security patches meanwhile."},
+  max8:{name:"Max 8.x currency (9.1 blocked)",
+    does:"Newest 8.x patches everywhere: vCenter/ESX 8.0U3j, vSphere Supervisor v1.32.9 (build vsc0.1.15), NSX 4.2.3.3. Every one of those versions is a 9.x dead end in this matrix export.",
+    when:"Only if the 9.1 project is cancelled or far away — and re-export the matrices before committing."}
+};
+const VARIANT_GUIDE = `<div class="card"><h3>Deployment options</h3>
+<table><thead><tr><th>Variant</th><th>What it does</th><th>Choose it when</th></tr></thead><tbody>
+${["handoff","v91","min","max8"].map(k=>{const v=VARIANT_INFO[k];
+  return `<tr><td><b>${v.name}</b>${v.rec?' <span class="pill">recommended</span>':""}</td><td>${v.does}</td><td>${v.when}</td></tr>`;}).join("")}
+</tbody></table></div>`;
+document.getElementById("sec-roadmap").innerHTML = `
+<div class="row"><div><label>Variant</label><select id="rm-var" style="max-width:560px">
+  <option value="v91">Recommended — 9.1-ready hold, then via 9.0.2 (workloads supported at every step)</option>
+  <option value="handoff">Pre-9.1 handoff — newest 9.1-open releases in minimal windows, then stop (9.1 team upgrades or migrates)</option>
+  <option value="max8">Max 8.x currency (U3j) — only if 9.1 is off the table</option>
+  <option value="min">Minimal supported, 9.1-open — only VKS + workload TKrs + packages move</option></select></div></div>
+${VARIANT_GUIDE}
+<p class="small">A “direct 8.x → 9.1” variant was considered and dropped: no TKr is supported on both vCenter 8.0U3 and 9.1, so it forces workload clusters through an unsupported window. The via-9.0.2 route avoids that entirely.</p>
+<div id="rm-body"></div>`;
+const RM_SEQS = {v91:SEQ_91, handoff:SEQ_HANDOFF, max8:SEQ_MAX8, min:SEQ_MIN};
+function drawRoadmap(){ document.getElementById("rm-body").innerHTML =
+  roadmapHTML(RM_SEQS[document.getElementById("rm-var").value]); }
+document.getElementById("rm-var").onchange=drawRoadmap; drawRoadmap();
+
+// ================= PACKAGES =================
+document.getElementById("sec-packages").innerHTML = `
+<div class="card"><h3>Where each package lives</h3>
+<p style="font-size:13px;color:var(--ink2)">Two separate things ship “packages”. <b>Core packages</b> are baked into each TKr (the Kubernetes release itself): the CNI — <b>Antrea, or Calico</b> if selected at cluster provisioning — plus vSphere CSI, CoreDNS, etcd, containerd, Pinniped, kapp-controller, secretgen-controller, metrics-server. They upgrade automatically with every TKr roll; per-TKr exact versions: <code>kubectl get kr &lt;tkr-name&gt; -o yaml</code> on the Supervisor. <b>Standard packages / add-ons</b> are the optional Carvel packages installed per cluster — that is what “v2023.9.19” is, and what the customer's dependencies sit on.</p></div>
+
+<div class="step"><div class="n">0</div><div class="body"><h4>Current — Tanzu Standard Repository v2023.9.19</h4>
+<p><b>Contents:</b> cert-manager (certificate management) · Contour + Envoy (ingress) · ExternalDNS · Fluent Bit (log forwarding) · FluxCD controllers — source, helm, kustomize (GitOps/CD) · Grafana (dashboards) · Harbor (registry) · Multus CNI (secondary NICs) · Prometheus (metrics) · Whereabouts (IPAM for Multus). Package names in the legacy <i>tanzu.*</i> namespace.</p>
+<p class="small">Release notes: <a href="https://techdocs.broadcom.com/us/en/vmware-tanzu/standalone-components/tanzu-kubernetes-grid/2-5/tkg/workload-packages-release-notes.html" target="_blank" rel="noopener noreferrer">Tanzu Standard Repository Release Notes (Broadcom TechDocs)</a></p>
+<div class="flag">This repo line has no rows anywhere in the interop matrices — the current package state is undocumented against TKr 1.31/1.32. Inventory which of these packages the customer's workloads actually depend on before CR-08.</div></div></div>
+
+<div class="step"><div class="n">1</div><div class="body"><h4>8.x target — VKS Standard Packages v2025.8.19</h4>
+<p><b>Contents (per the VKS standard-packages line):</b> cert-manager · Contour · ExternalDNS · Fluent Bit · Harbor · Prometheus · Telegraf (observability) · Velero (backup/DR) · Cluster Autoscaler · Istio (service mesh) · AKO (Avi/NSX-ALB ingress) · Windows gMSA. All renamed from <i>tanzu.*</i> to <i>*.kubernetes.vmware.com</i> at v2025.6.17 — updates cross the rename via <code>package installed update -p &lt;new-name&gt;</code>.</p>
+<p><b class="s-inc">Dependency deltas to check:</b> FluxCD controllers, Multus CNI, Whereabouts and Grafana are NOT in the announced VKS standard-package set — if the customer depends on any of these, check the per-release “Packages Removed” sections in the release notes and plan a replacement (e.g. upstream Flux, NSX-native secondary interfaces) before decommissioning the old repo.</p>
+<p class="small">Matrix: Add-ons v2025.8.19 ↔ TKr 1.32.7 <span class="s-ok">✓ Compatible</span> (v2025.1.7 is Not Supported on 1.32.7). Release notes: <a href="https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vsphere-supervisor-services-and-standalone-components/latest/release-notes/vks-standard-packages-release-notes.html" target="_blank" rel="noopener noreferrer">VKS Standard Packages Release Notes</a></p></div></div>
+
+<div class="step"><div class="n">2</div><div class="body"><h4>Post-9.1 — VKS Add-ons 3.6.0 / 3.7.0 line</h4>
+<p><b>Contents:</b> same functional set as step 1 (cert-manager, Contour, ExternalDNS, Fluent Bit, Harbor, Prometheus, Telegraf, Velero, Cluster Autoscaler, Istio, AKO, gMSA) plus <b>Gatekeeper</b> (policy/admission control, added at 3.6.0), delivered through the new add-on management integrated with VKS 3.5+ / VCF UI &amp; CLI.</p>
+<p class="small">Matrix: Add-ons 3.6.0 line ↔ TKr 1.33.6 <span class="s-ok">✓ Compatible</span>; the 3.7.0 line targets TKr 1.34+ — move TKrs before adopting it. Release notes: <a href="https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-service-administration-and-development/9-1/release-notes/vks-addons-release-notes.html" target="_blank" rel="noopener noreferrer">VKS Add-ons Release Notes (VCF 9.1)</a></p></div></div>
+
+<div class="card"><h3>Impact when updating packages</h3>
+<p style="font-size:13px;color:var(--ink2)">Per-package rolling restarts inside each cluster: cert-manager webhooks briefly unavailable (new cert issuance pauses; running certs unaffected) · Contour/Envoy restart can blip ingress if Envoy is single-replica · Fluent Bit daemonset restart pauses log shipping seconds per node · Velero idle unless a backup is running. Application pods themselves are not restarted. Record current package versions per cluster before the window; Carvel supports version pinning for rollback.</p></div>`;
+
+// ================= DEPLOYMENT PLAN =================
+// Reference registry. verified:true = the page/KB was retrieved or confirmed by title+URL during this analysis.
+// verified:false = the document is known to exist in this area but was NOT confirmed — obtain before execution.
+const REFS = {
+  MATRIX:{n:1,t:"Broadcom Product Interoperability Matrix (Upgrade + Interoperability) — source of every Compatible/Incompatible/Not Supported statement in this plan",u:"https://interopmatrix.broadcom.com/Upgrade",v:true},
+  SUPRN:{n:2,t:"vSphere Supervisor 8.0 Release Notes (per-patch Supervisor versions; U3g auto-upgrade; U3h requires Supervisor ≥1.30)",u:"https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere-supervisor/8-0/release-notes/vmware-vsphere-supervisor-80-release-notes.html",v:true},
+  ROLL:{n:3,t:"Understanding the Rolling Update Model for TKG Service Clusters (vSphere 8)",u:"https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere-supervisor/8-0/using-tkg-service-with-vsphere-supervisor/updating-tkg-service-clusters/understanding-the-rolling-update-model-for-tkg-service-clusters.html",v:true},
+  KB415192:{n:4,t:"KB 415192 — Upgrading workload clusters K8s 1.32 → 1.33 (rolling node replacement, availability statement, backup prerequisite)",u:"https://knowledge.broadcom.com/external/article/415192/",v:true},
+  KB345904:{n:5,t:"KB 345904 — Workload cluster upgrade stuck: node not deleting due to PodDisruptionBudget",u:"https://knowledge.broadcom.com/external/article/345904/",v:true},
+  KB440381:{n:6,t:"KB 440381 — Application outage during NSX Edge upgrade failover due to missed GARP",u:"https://knowledge.broadcom.com/external/article/440381/application-outage-during-nsx-edge-upgra.html",v:true},
+  NSXOI:{n:7,t:"NSX 4.2 Upgrade Guide — Operational Impact of the NSX Upgrade (edge / host / manager phases)",u:"https://techdocs.broadcom.com/us/en/vmware-cis/nsx/vmware-nsx/4-2/upgrade-guide/preparing-to-upgrade-nsx-t/operational-impact-of-nsx-t-upgrade.html",v:true},
+  SUPHOW:{n:8,t:"How vSphere Supervisor Updates Work (vSphere 8)",u:"https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere-supervisor/8-0/updating-vsphere-supervisor/updating-the-vsphere-with-tanzu-environment/how-vsphere-iaas-contro-plane-updates-work.html",v:true},
+  PKGRN:{n:9,t:"VKS Standard Packages Release Notes (v2025.x line, incl. v2025.8.19 — per-tag package versions and 'Packages Removed' sections)",u:"https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vsphere-supervisor-services-and-standalone-components/latest/release-notes/vks-standard-packages-release-notes.html",v:true},
+  VKRRN:{n:10,t:"VMware VKr (vSphere Kubernetes releases) Release Notes — per-TKr bundled components; documents 'kubectl get kr <name> -o yaml' as the authoritative component listing",u:"https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vsphere-supervisor-services-and-standalone-components/latest/release-notes/vmware-vkr-release-notes.html",v:true},
+  TSPKG:{n:11,t:"Tanzu Standard Repository Packages (package list for the 2023.x repo the customer runs today)",u:"https://techdocs.broadcom.com/us/en/vmware-tanzu/cli/tanzu-packages/latest/tnz-packages/ts-packages.html",v:true},
+  TSRN:{n:12,t:"Tanzu Standard Repository Release Notes (v2023.x line)",u:"https://techdocs.broadcom.com/us/en/vmware-tanzu/standalone-components/tanzu-kubernetes-grid/2-5/tkg/workload-packages-release-notes.html",v:true},
+  AODBLOG:{n:13,t:"VMware blog — Extend VCF with enhanced VKS Add-ons (package set; tanzu.* → *.kubernetes.vmware.com rename at v2025.6.17; update command)",u:"https://blogs.vmware.com/cloud-foundation/2025/07/24/unlocking-new-possibilities-extend-vmware-cloud-foundation-with-enhanced-vsphere-kubernetes-service-add-ons/",v:true},
+  AORN:{n:14,t:"VKS Add-ons Release Notes (VCF 9.1 — post-9.1 package line)",u:"https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vcf-service-administration-and-development/9-1/release-notes/vks-addons-release-notes.html",v:true},
+  VKSUP:{n:15,t:"Upgrade the VKS Version (installing and upgrading the VKS/TKG service)",u:"https://techdocs.broadcom.com/us/en/vmware-cis/vcf/vsphere-supervisor-services-and-standalone-components/latest/managing-vsphere-kubernetes-service/installing-and-upgrading-the-tkg-service/upgrade-the-tkg-service-version.html",v:true},
+  VCRN:{n:16,t:"vCenter Server 8.0 Update-and-Patch Release Notes (per-patch pages, e.g. 8.0U3i / 8.0U3j)",u:"https://techdocs.broadcom.com/us/en/vmware-cis/vsphere/vsphere/8-0/release-notes/vcenter-server-update-and-patch-release-notes/vsphere-vcenter-server-80u3j-release-notes.html",v:true},
+  KB413824:{n:17,t:"KB 413824 — Downloads and license upgrade from 8.x to 9.x",u:"https://knowledge.broadcom.com/external/article/413824/",v:true},
+  KB397456:{n:18,t:"KB 397456 — VKr lifecycle / end-of-service status of Kubernetes releases",u:"https://knowledge.broadcom.com/external/article/397456/",v:true},
+  KB440630:{n:19,t:"KB 440630 — Upgrade sequence and related issues for VCF/VVF 9.1",u:"https://knowledge.broadcom.com/external/article/440630/",v:true},
+  VCPATCH:{n:20,t:"vCenter 8.0 patching procedure (VAMI/CLI patch process for the appliance) — exact procedure page NOT verified in this analysis; locate under vSphere 8.0 'vCenter Server Configuration' docs before the window",u:"",v:false},
+  VLCM:{n:21,t:"vLCM host remediation procedure for ESX 8.0U3 patches — exact procedure page NOT verified in this analysis; locate under 'Managing Host and Cluster Lifecycle' (vSphere 8.0) before the window",u:"",v:false},
+  NSX9UP:{n:22,t:"NSX 9.0 Upgrade Guide (procedure for 4.2.2.1 → 9.0.2 upgrade coordinator run) — NOT verified in this analysis; locate under NSX 9.0 documentation before the window",u:"",v:false},
+  HCXDOC:{n:23,t:"HCX 9.1 user guide (migration procedures) — only the interop cells (HCX 9.1 ↔ ESX 8.0U3 and ↔ ESX 9.1) were verified; the migration procedure docs were NOT reviewed",u:"",v:false},
+};
+function refTag(r){ return r.v
+  ? `<a href="${r.u}" title="${esc(r.t)}" target="_blank" rel="noopener noreferrer">[${r.n}]</a>`
+  : `<span class="s-inc" title="${esc(r.t)}">[${r.n}⚠]</span>`; }
+function refList(keys){ return keys.map(k=>refTag(REFS[k])).join(" "); }
+
+// Plan step library — plain language, facts with references only.
+const DP = {
+ VKS:{t:"Upgrade the Kubernetes service (VKS) 3.1.1 → 3.3.3",
+  what:"Upgrade of the VKS management service that runs on the Supervisor. This is a one-hop, matrix-supported upgrade. It does not touch application pods directly.",
+  impact:"No direct application impact. However, Broadcom documents that “Upgrading the TKG Service version may trigger a rolling update of TKGS clusters” — so plan this window as if a cluster rolling update may follow (see the workload impact panel above for what that means).",
+  refs:["MATRIX","VKSUP","ROLL"]},
+ TKR:{t:"Upgrade every workload cluster: Kubernetes 1.26.13 → 1.31.x → 1.32.7 (one minor version at a time)",
+  what:"Each cluster's nodes are replaced with new ones, control plane first, then workers one node at a time — repeated once per Kubernetes minor version. From 1.26.13 that is six passes per cluster to reach 1.32.7. Kubernetes versions cannot be skipped; the platform enforces sequential upgrades.",
+  impact:"This is the step that can touch applications, with three documented behaviours: (1) “Pods running on a cluster that are not governed by a replication controller will be deleted during a Kubernetes version upgrade as part of the worker node drain” — inventory bare pods first. (2) Applications with a single replica restart on a new node (brief outage); Broadcom states availability is maintained “for resources managed by Deployments or ReplicaSets”. (3) PodDisruptionBudgets are respected — Cluster API “will not terminate a machine if the thresholds would be exceeded” — which protects multi-replica applications but can also stall the upgrade if a PDB never allows eviction (documented failure mode). The cluster's bundled components (CNI — Calico or Antrea — CSI, CoreDNS, containerd) change on every pass; list them per release with kubectl get kr &lt;name&gt; -o yaml before and after.",
+  impact2:"Declared caveat: Kubernetes releases 1.27–1.30 pre-date the matrix export's coverage (it starts at 1.31.1). Their availability in the environment's content library and their per-release notes must be confirmed against the VKr release notes and lifecycle KB before the window — this plan cannot cite matrix cells for those intermediate hops.",
+  refs:["ROLL","KB415192","KB345904","VKRRN","KB397456","MATRIX"]},
+ VCG:{t:"Patch vCenter 8.0U3 → 8.0U3g (stage 1 of 2)",
+  what:"A vCenter patch within the Update-3 line, applied to the appliance. The sequence deliberately stops at U3g first: it delivers the Supervisor updates for Kubernetes 1.29/1.30, which must be applied before the vCenter 8.0U3h patch.",
+  impact:"Management-plane only: VMs and Kubernetes applications keep running. The vSphere Client, vCenter APIs and the Supervisor's kubectl endpoint are briefly unavailable while services restart. Per the vSphere Supervisor release notes, vCenter 8.0U3g also auto-upgrades any vSphere Supervisor still on Supervisor Kubernetes 1.27 to 1.28.",
+  impact2:"Two call-outs: (a) the 'no impact to running VMs' statement is standard vCenter patch behaviour (management plane is separate from the hosts running the VMs) — no single Broadcom sentence was captured for it in this analysis; confirm which services restart in the target patch's own release-notes page. (b) The exact appliance patch procedure page (VAMI/CLI) was not verified — locate it in the official vSphere 8.0 docs before execution [20⚠].",
+  refs:["MATRIX","SUPRN","VCRN","VCPATCH"]},
+ SUPA:{t:"Upgrade the vSphere Supervisor: Supervisor Kubernetes 1.28.3 → 1.29.7 → 1.30.10 (two windows)",
+  what:"Apply the vSphere Supervisor updates delivered by the vCenter patch, one Supervisor Kubernetes minor version at a time, from the Workload Management → Updates screen. The official update-model document [8] describes how Supervisor updates are performed — read it before the window; this analysis verified the document's existence and the release-notes facts below, but did not capture its step-by-step text.",
+  impact:"No application outage expected. Two documented cautions: the vSphere Supervisor's kubectl endpoint is intermittently unavailable during each roll, and vSphere Supervisor changes can trigger rolling updates of workload clusters (system-initiated template changes are a documented trigger) — so the window must tolerate a cluster roll.",
+  impact2:"Supportability, stated precisely: the interoperability matrix has no upgrade rows for vSphere Supervisor versions this old (its coverage starts at Supervisor v1.30.10). The supported path is documented in the vSphere Supervisor release notes instead: each vCenter 8.0U3 patch delivers the next Supervisor minors, and vCenter 8.0U3h's prerequisite explicitly instructs upgrading the vSphere Supervisor to at least Supervisor Kubernetes 1.30 first. This is a matrix coverage gap, not an unsupported operation.",
+  refs:["SUPRN","SUPHOW","ROLL","MATRIX"]},
+ VCH:{t:"Patch vCenter 8.0U3g → 8.0U3h (stage 2 of 2) — and stop",
+  what:"Second vCenter patch. vCenter 8.0U3h is the newest Update-3 patch whose upgrade rows to BOTH vCenter 9.0.2 and vCenter 9.1 are 'Compatible' in the matrix. vCenter 8.0U3i keeps only the vCenter 9.1 door; vCenter 8.0U3j has no vSphere-9 door at all — every 9.x cell for vCenter 8.0U3j is 'Incompatible'. Do not patch past vCenter 8.0U3h.",
+  impact:"Same as stage 1: management plane only, no application impact. Hard prerequisite from the vSphere Supervisor release notes: the vSphere Supervisor must already be on Supervisor Kubernetes 1.30 or later, because vCenter 8.0U3h drops Supervisor Kubernetes 1.28 and 1.29.",
+  refs:["MATRIX","SUPRN","VCRN","VCPATCH"]},
+ ESX:{t:"Patch all ESX hosts 8.0U3 → 8.0U3h (rolling, one host at a time)",
+  what:"vSphere Lifecycle Manager remediates hosts one by one: DRS live-migrates all VMs off a host (including the Supervisor and cluster node VMs), the host enters maintenance mode, is patched, and returns.",
+  impact:"No application downtime expected on a multi-host cluster — VMs are live-migrated, not restarted. This maintenance-mode pattern (DRS evacuates the host, VMs return after) is documented in Broadcom's host-upgrade impact guidance [7]. The cluster runs one host short during each host's window, so confirm capacity for N-1 before starting. Done after vCenter (vCenter must always be at the same or later version than ESX — standard vSphere rule; no single sentence captured for it in this analysis).",
+  impact2:"Reference gap called out: the vLCM remediation procedure page for ESX 8.0U3 patches was not verified in this analysis — locate it in the official vSphere 8.0 lifecycle docs before execution [21⚠].",
+  refs:["MATRIX","NSXOI","VLCM"]},
+ SUP13:{t:"Upgrade the vSphere Supervisor to Supervisor v1.31.11 (build vsc0.1.13) — and park it there",
+  what:"The final vSphere Supervisor step on vSphere 8. Supervisor v1.31.11+vmware.1-fips-vsc0.1.13 is the ONLY vSphere-8 Supervisor build with 'Compatible' upgrade rows to the vSphere-9 Supervisors (both the vSphere 9.0.2 and 9.1 lines). The newer Supervisor builds vCenter will offer afterwards — Supervisor builds vsc0.1.14 and vsc0.1.15 — have 'Incompatible' in every vSphere-9 row. Decline them.",
+  impact:"Same profile as the earlier vSphere Supervisor windows: no application outage expected, kubectl endpoint intermittently unavailable, a cluster rolling update may follow.",
+  refs:["MATRIX","SUPRN","SUPHOW","ROLL"]},
+ PKG:{t:"Move the packages: Tanzu Standard v2023.9.19 → VKS Standard Packages v2025.8.19 (per cluster)",
+  what:"Update each cluster's package repository to the v2025.8.19 tag and update every installed package. The packages were renamed from the tanzu.* names to *.kubernetes.vmware.com at v2025.6.17, so each update crosses that rename (documented update command in the reference).",
+  impact:"Application-relevant facts: today's repo (cert-manager, Contour+Envoy, ExternalDNS, Fluent Bit, FluxCD controllers, Grafana, Harbor, Multus, Prometheus, Whereabouts) appears NOWHERE in the interoperability matrices — the current package state is undocumented against Kubernetes 1.31/1.32. The v2025.8.19 tag is matrix-Compatible with TKr 1.32.7 (and 1.31.4); v2025.1.7 is 'Not Supported' on 1.32.7, so don't stop short. During updates, each package's own pods restart. The expected behaviours — cert-manager's webhook pausing NEW certificate issuance (running certificates unaffected), a single-replica Envoy blipping ingress, Fluent Bit pausing log shipping seconds per node — follow from how these components work, NOT from a Broadcom document captured in this analysis: validate them in pre-production. Application pods themselves are not restarted by a package update.",
+  impact2:"Dependency deltas to check before the window: FluxCD controllers, Multus, Whereabouts and Grafana are NOT in the announced VKS package set. Confirm their status in the per-release 'Packages Removed' sections before decommissioning the old repo. Honesty note: the per-package component versions inside the v2025.8.19 tag could not be extracted from the release-notes page during this analysis — read that tag's section directly and record versions per cluster before the window.",
+  refs:["MATRIX","TSPKG","TSRN","PKGRN","AODBLOG"]},
+ NSXHOLD:{t:"HANDOFF — hold NSX at 4.2.2.1 and hand over",
+  what:"NSX deliberately stays at 4.2.2.1. Its one matrix-supported forward move is 4.2.2.1 → 9.0.2.0 direct, and that upgrade must land after the vSphere Supervisor is at Supervisor build vsc0.1.13 (done) and before the vSphere Supervisor crosses to a vSphere-9 Supervisor build (vsc9.x) — which makes it the incoming 9.1 team's first task, whichever path they choose. At this point every component sits on the newest release with a verified 'Compatible' 9.x path.",
+  impact:"The 9.1 team's two options, with what this state gives them: (A) In-place upgrade — NSX → NSX 9.0.2, then vCenter and ESX → 9.0.2, vSphere Supervisor → Supervisor build vsc9.0.2, VKS → VKS 3.6.3, workload clusters → TKr 1.33.6, then everything to 9.1; the change pack's Phase B (CR-11 to CR-17) is that runbook, and workload clusters stay in matrix-supported combinations throughout. (B) Migrate — build VCF 9.1 alongside and move workloads; the matrix confirms HCX 9.1.0.0 is 'Compatible' with BOTH ESX 8.0U3 and ESX 9.1, and workload clusters at TKr 1.32.7 with VKS Standard Packages v2025.8.19 are in a documented state for app-level export (Velero/GitOps).",
+  impact2:"Reference gaps called out: the NSX 4.2→9.0 upgrade procedure [22⚠] and HCX migration procedures [23⚠] were not reviewed in this analysis — only the compatibility cells were verified. The team should also re-export the matrices on arrival: this plan is built on a July-2026 export, and newer 9.1 patches may have changed the rows.",
+  refs:["MATRIX","KB440630","KB413824","NSX9UP","HCXDOC"]},
+ NSX902:{t:"Upgrade NSX 4.2.2.1 → 9.0.2.0 (direct)",
+  what:"One matrix-supported hop, run through the NSX upgrade coordinator: edges first, then hosts, then managers. Done only after the vSphere Supervisor is at Supervisor build vsc0.1.13 (NSX 9.0.2 is 'Not Supported' against every older vSphere Supervisor). Do not route via NSX 4.2.3.3 or NSX 4.2.4.x — NSX 4.2.3.3's upgrade row to NSX 9.0.2 is 'Incompatible'.",
+  impact:"Documented, phase by phase: EDGES — north-south traffic and edge services (NAT, load balancing, edge firewall) see a brief interruption at each edge failover; a missed-GARP condition can extend it (known issue). HOSTS — using maintenance-mode upgrades, DRS evacuates each host first: no workload impact. MANAGERS — no data-plane impact; NSX UI/API briefly unavailable. Schedule the edge phase in the lowest-traffic window.",
+  impact2:"Reference gap called out: the operational-impact reference is the NSX 4.2 guide; the 9.0 upgrade-run procedure itself was not reviewed [22⚠].",
+  refs:["MATRIX","NSXOI","KB440381","NSX9UP"]},
+ J9A:{t:"Cross to vSphere 9.0.2: vCenter, then ESX hosts, then Supervisor",
+  what:"Major upgrades, in that order: vCenter 8.0U3h → 9.0.2.0, ESX hosts rolling to 9.0.2.0, then the vSphere Supervisor crosses to Supervisor v1.32.9 (build vsc9.0.2). All three are 'Compatible' upgrade rows.",
+  impact:"vCenter: management plane only (same call-out as the earlier vCenter step). ESX: rolling with live migration per the documented maintenance-mode pattern [7]. vSphere Supervisor: as before. Why vSphere 9.0.2 and not straight to 9.1: workload clusters at TKr 1.32.7 are 'Compatible' with vCenter 9.0.x but 'Not Supported' on 9.1 in the matrix — this route keeps them in a documented state at every moment. 9.x licensing must be in place first.",
+  refs:["MATRIX","NSXOI","KB413824","KB440630","SUPHOW"]},
+ J9B:{t:"On vSphere 9.0.2: VKS 3.3.3 → VKS 3.6.3, then all workload clusters TKr 1.32.7 → TKr 1.33.6",
+  what:"Two matrix-supported hops. This clears the workload Kubernetes floor for vSphere 9.1 (vCenter 9.1 supports TKr 1.33.1 and later only). Note VKS cannot jump VKS 3.3.3 → VKS 3.7.0 directly — VKS 3.6.3 is the documented hop.",
+  impact:"The cluster upgrade is one more rolling pass per cluster with the same documented behaviours as before (bare pods deleted on drain, single-replica restarts, PDBs respected). Broadcom's KB for this exact transition calls it “a standard minor version upgrade… supported according to the standard upgrade path” and requires backups beforehand.",
+  refs:["MATRIX","KB415192","ROLL","VKSUP"]},
+ J9C:{t:"Finish: vSphere 9.0.2 → 9.1 (vCenter, ESX, vSphere Supervisor, NSX)",
+  what:"All four upgrade rows are 'Compatible'. The resulting end state — vCenter 9.1.0.0, ESX 9.1.0.0, NSX 9.1.0.0, vSphere Supervisor v1.32.9 (build vsc9.1), VKS 3.6.3, workload clusters TKr 1.33.6 — was validated pairwise in this analysis: every combination is 'Compatible' in the matrices. VKS 3.7.0 and the VKS Add-ons 3.6.0/3.7.0 line follow optionally.",
+  impact:"Same per-component profiles as earlier windows. Use the explorer's 'Load 9.1 end state' preset as the acceptance checklist.",
+  refs:["MATRIX","KB440630","AORN"]},
+ MINHOLD:{t:"Hold everything else (minimal variant)",
+  what:"vCenter, ESX, NSX and the vSphere Supervisor stay exactly where they are. Every held version keeps a 'Compatible' 9.x upgrade row — the current GA builds have more 9.x doors open than the newest patches do.",
+  impact:"Costs stated plainly: no security patches on vCenter/ESX/NSX while holding, and the vSphere Supervisor stays on Supervisor Kubernetes 1.28 (past upstream end-of-life). The vSphere Supervisor's vSphere-9 stepping is deferred into the 9.x project, not eliminated.",
+  refs:["MATRIX","SUPRN"]},
+ MAX8:{t:"Max-8.x currency steps (only if 9.1 is abandoned)",
+  what:"vCenter and ESX to 8.0U3j, vSphere Supervisor to Supervisor v1.32.9 (build vsc0.1.15), NSX to NSX 4.2.3.3 — the stay-on-8 ceilings.",
+  impact:"Every one of those versions has 'Incompatible' in all of its 9.x upgrade rows in this matrix export. Choose this only if the 9.1 project is cancelled or distant, and re-export the matrices before committing.",
+  refs:["MATRIX"]},
+};
+const DPLANS = {
+  handoff:{label:"Pre-9.1 handoff (recommended)", steps:["VKS","TKR","VCG","SUPA","VCH","ESX","SUP13","PKG","NSXHOLD"]},
+  v91:{label:"Full path to 9.1 via 9.0.2", steps:["VKS","TKR","VCG","SUPA","VCH","ESX","SUP13","NSX902","PKG","J9A","J9B","J9C"]},
+  min:{label:"Minimal supported, 9.1-open", steps:["VKS","TKR","PKG","MINHOLD"]},
+  max8:{label:"Max 8.x currency (9.1 blocked)", steps:["VKS","TKR","MAX8"]},
+};
+document.getElementById("sec-deploy").innerHTML = `
+<div class="row"><div><label>Deployment option</label><select id="dp-var" style="max-width:480px">
+  <option value="handoff">Pre-9.1 handoff — newest 9.1-open releases, then hand over</option>
+  <option value="v91">Full path to 9.1 via 9.0.2</option>
+  <option value="min">Minimal supported, 9.1-open</option>
+  <option value="max8">Max 8.x currency (9.1 blocked)</option></select></div>
+  <div><button onclick="window.print()" style="font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:7px;background:var(--chip);color:var(--ink);cursor:pointer">Print / save as PDF</button></div>
+  <div><button id="dp-html" title="Generates the file locally in the browser — nothing is sent anywhere" style="font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:7px;background:var(--chip);color:var(--ink);cursor:pointer">Save plan as HTML</button></div>
+  <div><button id="dp-rtf" title="RTF opens natively in Google Docs, Word and Pages — generated locally in the browser, nothing is sent anywhere" style="font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:7px;background:var(--chip);color:var(--ink);cursor:pointer">Save for Google Docs / Word (.rtf)</button></div></div>
+
+<div class="card"><h2 id="dp-title" style="font-size:17px;margin:0 0 10px"></h2>
+<table><thead><tr><th>What this option does</th><th>Choose it when</th></tr></thead><tbody id="dp-guide"></tbody></table></div>
+
+<div class="card"><h3>Starting point — the versions this plan assumes</h3>
+<table><tbody>
+${["vCenter","ESX","NSX","Supervisor","VKS","WorkloadK8s","Addons"].map(c=>`<tr><td>${LABELS[c]}</td><td><b>${esc(BASE[c])}</b></td></tr>`).join("")}
+</tbody></table>
+<div id="dp-drift"></div></div>
+
+<div class="card"><h3>How to read this plan</h3>
+<p style="font-size:13px;color:var(--ink2)">Written for a production environment. Two kinds of content, kept distinct: <b>facts</b> — quoted/paraphrased statements from official Broadcom sources and cells from the interoperability-matrix export, always carrying a reference; and <b>commentary</b> — the sequencing, expected-outage judgements and recommendations, which are the author’s interpretation of those facts, not official Broadcom guidance. Reference numbers link to the source. <b>[n]</b> in blue = verified during this analysis. <b class="s-inc">[n⚠]</b> in red = the document exists in that area but was NOT verified — obtain and read it before the change window. Nothing in this plan is asserted without one or the other.</p>
+<div class="flag">Standing rule for every window: re-export the matrices from interopmatrix.broadcom.com and re-confirm this step's cells (${refTag(REFS.MATRIX)}); take vCenter file-based, NSX and Velero backups; verify the Supervisor is 'Ready' and every cluster 'Running' before and after.</div></div>
+
+
+<div class="card"><h3>Names and version formats used in this plan</h3>
+<table><tbody>
+<tr><td><b>vCenter</b></td><td>VMware vCenter Server (the management appliance). “vCenter 8.0U3h” = vCenter 8.0, Update 3, patch h. Per-patch pages: ${refTag(REFS.VCRN)}</td></tr>
+<tr><td><b>ESX</b></td><td>The VMware ESX hypervisor hosts the VMs run on. Versioned like vCenter (e.g. “ESX 8.0U3h”).</td></tr>
+<tr><td><b>NSX</b></td><td>The VMware NSX network platform (managers, edges, host networking). E.g. “NSX 4.2.2.1”, “NSX 9.0.2.0”.</td></tr>
+<tr><td><b>vSphere Supervisor</b></td><td>The Kubernetes control plane built into vSphere. Its full version looks like “v1.31.11+vmware.1-fips-vsc0.1.13”: the leading “v1.31.11” is the Supervisor's own Kubernetes version; the trailing “vsc…” identifies the Supervisor build and its delivery vehicle — Supervisor builds vsc0.1.x ship inside vCenter 8.0U3 patches, Supervisor builds vsc9.x belong to vSphere 9 ${refTag(REFS.SUPRN)}.</td></tr>
+<tr><td><b>VKS</b></td><td>vSphere Kubernetes Service — the service on the Supervisor that creates and manages the workload clusters. E.g. “VKS 3.3.3”.</td></tr>
+<tr><td><b>TKr / VKr</b></td><td>The Kubernetes release the workload clusters run (formerly “Tanzu Kubernetes release”, now “vSphere Kubernetes release”). E.g. “TKr 1.32.7” = workload cluster Kubernetes 1.32.7 ${refTag(REFS.VKRRN)}.</td></tr>
+<tr><td><b>Packages / VKS Add-ons</b></td><td>The optional per-cluster components (ingress, certificates, logging, registry, monitoring). Old repo: “Tanzu Standard v2023.9.19”; new: “VKS Standard Packages v2025.8.19” ${refTag(REFS.PKGRN)}.</td></tr>
+</tbody></table></div>
+
+<div class="card"><h3>Versions that can affect applications — read before any window</h3>
+<p style="font-size:13px;color:var(--ink2)"><b>Inside each Kubernetes release (TKr):</b> the CNI (Calico or Antrea — whichever the clusters were built with), the storage driver (vSphere CSI), CoreDNS, etcd and containerd are bundled with the TKr and change on every cluster upgrade pass. The authoritative per-release component list is <code>kubectl get kr &lt;name&gt; -o yaml</code> on the Supervisor ${refTag(REFS.VKRRN)} — run it for the current and target TKr and diff them before each pass. <b>The optional packages</b> applications may depend on (ingress, certificates, logging, registry, monitoring, GitOps) live in the standard-package repository and are covered by the package step below — including four packages that do not carry forward ${refTag(REFS.PKGRN)} ${refTag(REFS.AODBLOG)}.</p>
+<p style="font-size:13px;color:var(--ink2)"><b>The three documented application-impact mechanisms</b> during cluster upgrades ${refTag(REFS.ROLL)} ${refTag(REFS.KB415192)} ${refTag(REFS.KB345904)}: bare pods (no Deployment/ReplicaSet) are deleted on node drain; single-replica apps restart on a new node; PodDisruptionBudgets are honoured — which protects multi-replica apps and can stall the upgrade if misconfigured. Audit all three per cluster before the first TKr window.</p></div>
+
+<div id="dp-body"></div>
+<div class="card"><h3>References</h3><ol style="font-size:12.5px;color:var(--ink2);padding-left:18px" id="dp-refs"></ol>
+<p class="small">⚠ items are declared reference gaps: the plan does not cite them as evidence — they must be obtained and read before the relevant window. If a gap cannot be closed, raise it with Broadcom support (attach the matrix export) before proceeding.</p></div>`;
+function drawPlan(){
+  const key0=document.getElementById("dp-var").value, vi=VARIANT_INFO[key0];
+  document.getElementById("dp-title").textContent="Deployment Option: "+vi.name+(vi.rec?" (recommended)":"");
+  document.getElementById("dp-guide").innerHTML=`<tr><td>${vi.does}</td><td>${vi.when}</td></tr>`;
+  const drift=["vCenter","ESX","NSX","Supervisor","VKS","WorkloadK8s","Addons"].filter(c=>CUR[c]!==BASE[c]);
+  document.getElementById("dp-drift").innerHTML = drift.length
+    ? `<div class="flag"><b>The Overview current state has been edited and no longer matches this baseline:</b> ${drift.map(c=>`${LABELS[c]} is set to ${esc(CUR[c])}`).join(" · ")}. The step wording below was authored against the baseline above — re-verify which steps still apply (the Roadmap tab's chips track the edited state).</div>`
+    : "";
+  const key=document.getElementById("dp-var").value, plan=DPLANS[key];
+  document.getElementById("dp-body").innerHTML = plan.steps.map((id,i)=>{
+    const s=DP[id];
+    return `<div class="step"><div class="n">${i+1}</div><div class="body">
+      <h4>${s.t}</h4>
+      <p><b>Description:</b> ${s.what}</p>
+      <p><b>Impact:</b> ${s.impact}</p>
+      ${s.impact2?`<div class="flag">${s.impact2}</div>`:""}
+      <p class="small"><b>References:</b> ${refList(s.refs)}</p>
+    </div></div>`;
+  }).join("");
+  document.getElementById("dp-refs").innerHTML = Object.values(REFS).sort((a,b)=>a.n-b.n).map(r=>
+    `<li value="${r.n}">${r.v?`<a href="${r.u}" target="_blank" rel="noopener noreferrer">${esc(r.t)}</a>`:`<span class="s-inc">⚠ ${esc(r.t)}</span>`}</li>`).join("");
+}
+document.getElementById("dp-var").onchange=drawPlan; drawPlan();
+// Standalone HTML export of the selected variant. Generated entirely in the browser
+// (Blob + download) — no network involved. The output has no scripts.
+function planHTML(){
+  const key=document.getElementById("dp-var").value, plan=DPLANS[key];
+  const comps=["vCenter","ESX","NSX","Supervisor","VKS","WorkloadK8s","Addons"];
+  const steps=plan.steps.map((id,i)=>{ const s=DP[id]; return `<div class="step">
+    <h3>${i+1}. ${s.t}</h3>
+    <p><b>Description:</b> ${s.what}</p>
+    <p><b>Impact:</b> ${s.impact}</p>
+    ${s.impact2?`<p class="flag">⚠ ${s.impact2}</p>`:""}
+    <p class="refs">References: ${s.refs.map(k=>`[${REFS[k].n}]`).join(" ")}</p></div>`; }).join("");
+  const refs=Object.values(REFS).sort((a,b)=>a.n-b.n).map(r=>
+    `<li value="${r.n}">${r.v?`<a href="${r.u}">${esc(r.t)}</a>`:"⚠ NOT VERIFIED — obtain before the window — "+esc(r.t)}</li>`).join("");
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Deployment plan — ${plan.label}</title>
+<style>body{font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#111;max-width:860px;margin:32px auto;padding:0 20px}
+h1{font-size:20px}h2{font-size:16px;margin-top:28px}h3{font-size:14.5px;margin:20px 0 6px}
+table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:5px 10px;text-align:left;font-size:13px}
+p{margin:6px 0}.flag{border-left:3px solid #b97a00;padding:6px 10px;background:#f6f4ee}
+.refs,.src{color:#555;font-size:12.5px}.step{page-break-inside:avoid}ol{font-size:12.5px;color:#333}</style></head><body>
+<h1>Deployment plan — ${plan.label}</h1>
+<p class="src">Data source: official Broadcom Product Interoperability Matrix, exported ${esc(DATA.asof||"16 Jul 2026")}.
+Sequencing and impact commentary is the author’s interpretation, not Broadcom guidance.</p>
+<h2>Starting point — the versions this plan assumes</h2>
+<table><tbody>${comps.map(c=>`<tr><td>${LABELS[c]}</td><td><b>${esc(BASE[c])}</b></td></tr>`).join("")}</tbody></table>
+<h2>Workload impact panel — read before any window</h2>
+<p><b>Inside each Kubernetes release (TKr):</b> the CNI (Calico or Antrea — whichever the clusters were built with), the storage driver (vSphere CSI), CoreDNS, etcd and containerd are bundled with the TKr and change on every cluster upgrade pass — the authoritative per-release component list is <code>kubectl get kr &lt;name&gt; -o yaml</code> on the Supervisor [10].</p>
+<p><b>The three documented application-impact mechanisms</b> during cluster upgrades [3] [4] [5]: bare pods (no Deployment/ReplicaSet) are deleted on node drain; single-replica applications restart on a new node; PodDisruptionBudgets are honoured — which protects multi-replica applications and can stall the upgrade if misconfigured. Audit all three per cluster before the first TKr window.</p>
+<h2>Steps</h2>${steps}
+<h2>References</h2><ol>${refs}</ol>
+</body></html>`;
+}
+function saveBlob(content, type, filename){
+  const blob=new Blob([content],{type});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(a.href);
+}
+document.getElementById("dp-html").onclick=()=>
+  saveBlob(planHTML(),"text/html;charset=utf-8","deployment-plan-"+document.getElementById("dp-var").value+".html");
+// RTF export — opens natively in Google Docs / Word / Pages. Pure text format,
+// generated locally with no libraries; the DP strings are plain text apart from
+// a few HTML entities, which plainText() decodes.
+function plainText(s){ return String(s).replace(/<[^>]*>/g,"")
+  .replace(/&lt;/g,"<").replace(/&gt;/g,">").replace(/&quot;/g,'"').replace(/&amp;/g,"&"); }
+function rtfEsc(s){ return plainText(s)
+  .replace(/[\\{}]/g, m=>"\\"+m)
+  .replace(/[\u0080-\uffff]/g, ch=>{ const c=ch.charCodeAt(0); return "\\u"+(c>32767?c-65536:c)+"?"; }); }
+function planRTF(){
+  const key=document.getElementById("dp-var").value, plan=DPLANS[key];
+  const comps=["vCenter","ESX","NSX","Supervisor","VKS","WorkloadK8s","Addons"];
+  const R=["{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fswiss Helvetica;}}\\f0\\fs22 "];
+  const H=(t,fs)=>R.push("{\\b\\fs"+fs+" "+rtfEsc(t)+"}\\par\\par ");
+  const P=(t)=>R.push(rtfEsc(t)+"\\par\\par ");
+  H("Deployment plan — "+plan.label, 34);
+  R.push("{\\fs18 "+rtfEsc("Data source: official Broadcom Product Interoperability Matrix, exported "+(DATA.asof||"16 Jul 2026")+". Sequencing and impact commentary is the author’s interpretation, not Broadcom guidance.")+"}\\par\\par ");
+  H("Starting point — the versions this plan assumes", 26);
+  comps.forEach(c=>R.push("\\trowd\\trgaph108\\cellx4600\\cellx9360 "
+    +rtfEsc(LABELS[c])+"\\cell {\\b "+rtfEsc(BASE[c])+"}\\cell\\row "));
+  R.push("\\pard\\par ");
+  H("Workload impact panel — read before any window", 26);
+  P("Inside each Kubernetes release (TKr): the CNI (Calico or Antrea — whichever the clusters were built with), the storage driver (vSphere CSI), CoreDNS, etcd and containerd are bundled with the TKr and change on every cluster upgrade pass — the authoritative per-release component list is kubectl get kr &lt;name&gt; -o yaml on the Supervisor [10].");
+  P("The three documented application-impact mechanisms during cluster upgrades [3] [4] [5]: bare pods (no Deployment/ReplicaSet) are deleted on node drain; single-replica applications restart on a new node; PodDisruptionBudgets are honoured — which protects multi-replica applications and can stall the upgrade if misconfigured. Audit all three per cluster before the first TKr window.");
+  H("Steps", 26);
+  plan.steps.forEach((id,i)=>{ const s=DP[id];
+    H((i+1)+". "+s.t, 24);
+    R.push("{\\b Description: }"+rtfEsc(s.what)+"\\par\\par ");
+    R.push("{\\b Impact: }"+rtfEsc(s.impact)+"\\par\\par ");
+    if(s.impact2) R.push("{\\i "+rtfEsc("⚠ "+s.impact2)+"}\\par\\par ");
+    R.push("{\\fs18 References: "+s.refs.map(k=>"["+REFS[k].n+"]").join(" ")+"}\\par\\par ");
+  });
+  H("References", 26);
+  Object.values(REFS).sort((a,b)=>a.n-b.n).forEach(r=>
+    R.push(rtfEsc(r.n+". "+(r.v ? r.t+" — "+r.u : "⚠ NOT VERIFIED — obtain before the window — "+r.t))+"\\par "));
+  R.push("}");
+  return R.join("");
+}
+document.getElementById("dp-rtf").onclick=()=>
+  saveBlob(planRTF(),"application/rtf","deployment-plan-"+document.getElementById("dp-var").value+".rtf");
+
+// ================= PATH FINDER =================
+document.getElementById("sec-path").innerHTML = `
+<div class="card"><h3>Shortest supported upgrade path (per component)</h3>
+<div class="row">
+ <div><label>Component</label><select id="pf-c">${["vCenter","ESX","NSX","Supervisor","VKS","WorkloadK8s"].map(c=>`<option value="${c}">${LABELS[c]}</option>`).join("")}</select></div>
+ <div id="pf-from-wrap"></div><div id="pf-to-wrap"></div>
+</div>
+<div id="pf-out"></div>
+<p class="small">Paths use only “Compatible” cells of the Upgrade matrices. Versions missing from a matrix (e.g. TKr 1.26.13, Supervisor v1.28.3) have no rows — the finder will say so rather than invent a path.</p>
+</div>`;
+const PF_DEFAULT = {vCenter:["8.0U3","8.0U3j"],ESX:["8.0U3","8.0U3j"],NSX:["4.2.2.1","4.2.3.3"],
+  Supervisor:["v1.30.10+vmware.1-fips-vsc0.1.14","v1.32.9+vmware.2-fips-vsc0.1.15"],VKS:["3.1.1","3.3.3"],WorkloadK8s:["1.31.4","1.32.7"]};
+function pfSelects(){
+  const c=document.getElementById("pf-c").value, d=PF_DEFAULT[c];
+  const from = CAT[c].includes(CUR[c]) ? CUR[c] : d[0];
+  document.getElementById("pf-from-wrap").innerHTML=sel("pf-from",c,from,"From (defaults to current state)");
+  document.getElementById("pf-to-wrap").innerHTML=sel("pf-to",c,d[1],"To");
+  document.getElementById("pf-from").onchange=drawPath;
+  document.getElementById("pf-to").onchange=drawPath;
+  drawPath();
+}
+function drawPath(){
+  const c=document.getElementById("pf-c").value,
+        f=document.getElementById("pf-from").value, t=document.getElementById("pf-to").value;
+  const out=document.getElementById("pf-out");
+  const direct=(ADJ[c][f]||[]);
+  if(!(f in ADJ[c]) && direct.length===0){
+    out.innerHTML=`<div class="flag"><b>${esc(f)}</b> has no upgrade rows in the matrix (below coverage or already newest). ${statCell(null)}</div>`;
+    return;
+  }
+  const p=bfs(c,f,t);
+  let html="";
+  if(p) html+=`<div class="path-chain">${p.map((v,i)=>`${i?'<span class="hop">→</span>':""}<span class="node">${esc(v)}</span>`).join("")}</div>
+    <p class="small">${p.length-1} hop${p.length>2?"s":""}, every hop “Compatible” in the Upgrade matrix.</p>`;
+  else html+=`<div class="flag">No supported path from <b>${esc(f)}</b> to <b>${esc(t)}</b> in the Upgrade matrix.</div>`;
+  const NINE = {vCenter:v=>/^9\./.test(v), ESX:v=>/^9\./.test(v), NSX:v=>/^9\./.test(v), Supervisor:v=>/vsc9/.test(v)};
+  const door = v => { if(!NINE[c]) return ""; if(NINE[c](v)) return ""; 
+    const open=(ADJ[c][v]||[]).some(x=>NINE[c](x)); 
+    return open?' <span class="s-ok" title="has a Compatible onward path to 9.x">9.x✓</span>':' <span class="s-inc" title="no Compatible onward path to 9.x in this export — dead end for the 9.1 goal">9.x✕</span>'; };
+  html+=`<p class="small" style="margin-top:8px"><b>All direct targets from ${esc(f)}:</b> ${direct.length?direct.map(v=>esc(v)+door(v)).join(", "):"none in matrix"}${NINE[c]?' — <span class="s-ok">9.x✓</span>/<span class="s-inc">9.x✕</span> marks whether that target still has a Compatible onward path to 9.x':""}</p>`;
+  out.innerHTML=html;
+}
+document.getElementById("pf-c").onchange=pfSelects; pfSelects();
+
+// ================= COMPAT CHECKER =================
+const CHECK_DEF = {vCenter:"8.0U3",ESX:"8.0U3",NSX:"4.2.2.0",
+  Supervisor:"v1.28.3+vmware.2-fips.1-vsc0.1.9",VKS:"3.1.1",WorkloadK8s:"1.31.1",Addons:"v2025.8.19"};
+document.getElementById("sec-check").innerHTML = `
+<div class="card"><h3>Pick a version per component — every known pairing is checked</h3>
+<div class="row">${["vCenter","ESX","NSX","Supervisor","VKS","WorkloadK8s","Addons"].map(c=>sel("ck-"+c,c,CHECK_DEF[c])).join("")}</div>
+<div class="row">
+  <button id="ck-cur" style="font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:7px;background:var(--chip);color:var(--ink);cursor:pointer">Load current state</button>
+  <button id="ck-rec" style="font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:7px;background:var(--chip);color:var(--ink);cursor:pointer">Load 8.x hold (9.1-ready)</button>
+  <button id="ck-91" style="font:inherit;font-size:13px;padding:6px 12px;border:1px solid var(--line);border-radius:7px;background:var(--chip);color:var(--ink);cursor:pointer">Load 9.1 end state</button>
+</div>
+<div id="ck-out"></div>${LEGEND}
+<p class="small">“· not in matrices” means that pairing simply doesn’t appear in any of the 12 CSVs (e.g. TKr 1.26.13, Supervisor v1.28.3 vs NSX patch builds). NSX/vCenter/ESX patch builds inherit their line’s interop row (e.g. 4.2.3.3 → row “4.2.3”).</p>
+</div>`;
+const HASPAIR = new Set();
+for(const [a,ai,b,bi] of DATA.pairs){ HASPAIR.add(a+":"+ai); HASPAIR.add(b+":"+bi); }
+function P_hasAny(c,v){
+  const vi=VI[c][v];
+  return vi!==undefined && HASPAIR.has(C.indexOf(c)+":"+vi);
+}
+const LINE_MAP = (c,v)=>{ // map patch builds to their interop line where the matrix is coarse
+  if(P_hasAny(c,v)) return v;
+  const cands=[];
+  if(c==="NSX"){ const m=v.match(/^(\d+\.\d+\.\d+)/); if(m){ cands.push(m[1]+".0", m[1]); } }
+  if(c==="vCenter"||c==="ESX"){ const m=v.match(/^(8\.0U\d|9\.\d+\.\d+|8\.0)/); if(m) cands.push(m[1], m[1]+".0.0"); }
+  if(c==="Supervisor"||c==="VKS"||c==="WorkloadK8s"){ const m=v.match(/^v?\d+\.\d+\.\d+/); if(m) for(const cv of CAT[c]) if(cv.startsWith(m[0])&&P_hasAny(c,cv)){cands.push(cv);break;} }
+  for(const cd of cands) if(P_hasAny(c,cd)) return cd;
+  return v;
+};
+function drawCheck(){
+  const comps=["vCenter","ESX","NSX","Supervisor","VKS","WorkloadK8s","Addons"];
+  const pick={}; comps.forEach(c=>pick[c]=document.getElementById("ck-"+c).value);
+  let rows="";
+  for(let i=0;i<comps.length;i++) for(let j=i+1;j<comps.length;j++){
+    const a=comps[i], b=comps[j];
+    const av=LINE_MAP(a,pick[a]), bv=LINE_MAP(b,pick[b]);
+    const s=pairStatus(a,av,b,bv);
+    const note=(av!==pick[a]||bv!==pick[b])?`<span class="small"> (via ${esc(av!==pick[a]?av:bv)} row)</span>`:"";
+    rows+=`<tr><td>${LABELS[a]} <b>${esc(pick[a])}</b></td><td>${LABELS[b]} <b>${esc(pick[b])}</b></td><td>${statCell(s)}${s!==null?note:""}</td></tr>`;
+  }
+  document.getElementById("ck-out").innerHTML=`<table><thead><tr><th>Component A</th><th>Component B</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+["vCenter","ESX","NSX","Supervisor","VKS","WorkloadK8s","Addons"].forEach(c=>document.getElementById("ck-"+c).onchange=drawCheck);
+document.getElementById("ck-cur").onclick=()=>{
+  for(const c of ["vCenter","ESX","NSX","Supervisor","VKS","WorkloadK8s","Addons"]){
+    const el=document.getElementById("ck-"+c), v=CUR[c];
+    if(!v) continue;
+    if(![...el.options].some(o=>o.value===v)){ el.insertBefore(new Option(v,v), el.firstChild); }
+    el.value=v;
+  }
+  drawCheck();
+};
+document.getElementById("ck-rec").onclick=()=>{
+  const rec={vCenter:"8.0U3h",ESX:"8.0U3h",NSX:"9.0.2.0",Supervisor:"v1.31.11+vmware.1-fips-vsc0.1.13",VKS:"3.3.3",WorkloadK8s:"1.32.7",Addons:"v2025.8.19"};
+  for(const c in rec){ const el=document.getElementById("ck-"+c); if([...el.options].some(o=>o.value===rec[c])) el.value=rec[c]; }
+  drawCheck();
+};
+document.getElementById("ck-91").onclick=()=>{
+  const rec={vCenter:"9.1.0.0",ESX:"9.1.0.0",NSX:"9.1.0.0",Supervisor:"v1.32.9+vmware.2-fips-vsc9.1.0.0",VKS:"3.6.3+1.35",WorkloadK8s:"1.33.6",Addons:"3.6.0+20260521"};
+  for(const c in rec){ const el=document.getElementById("ck-"+c); if([...el.options].some(o=>o.value===rec[c])) el.value=rec[c]; }
+  drawCheck();
+};
+drawCheck();
+
+// ================= MATRIX BROWSER =================
+document.getElementById("sec-matrix").innerHTML = `
+<div class="card"><h3>Raw pairwise matrix</h3>
+<div class="row">
+ <div><label>Rows</label><select id="mx-a">${C.map(c=>`<option value="${c}" ${c==="Supervisor"?"selected":""}>${LABELS[c]||c}</option>`).join("")}</select></div>
+ <div><label>Columns</label><select id="mx-b">${C.map(c=>`<option value="${c}" ${c==="VKS"?"selected":""}>${LABELS[c]||c}</option>`).join("")}</select></div>
+ <div><label>Filter rows (substring)</label><input type="text" id="mx-f" placeholder="e.g. vsc0.1"></div>
+</div>
+<div id="mx-out" class="grid-wrap"></div>${LEGEND}
+</div>`;
+function drawMatrix(){
+  const a=document.getElementById("mx-a").value, b=document.getElementById("mx-b").value,
+        f=document.getElementById("mx-f").value.toLowerCase();
+  if(a===b){ document.getElementById("mx-out").innerHTML='<p style="padding:12px" class="small">Pick two different components.</p>'; return; }
+  const rows=CAT[a].filter(v=>!f||v.toLowerCase().includes(f));
+  // only keep columns that have at least one data point vs the row set
+  const cols=CAT[b].filter(cv=>rows.some(rv=>pairStatus(a,rv,b,cv)!==null));
+  const rows2=rows.filter(rv=>cols.some(cv=>pairStatus(a,rv,b,cv)!==null));
+  if(!rows2.length){ document.getElementById("mx-out").innerHTML='<p style="padding:12px" class="small">No data for this pair in the matrices.</p>'; return; }
+  let h='<table><thead><tr><th class="rowh corner"></th>'+cols.map(c=>`<th>${esc(c)}</th>`).join("")+"</tr></thead><tbody>";
+  for(const rv of rows2){
+    h+=`<tr><th class="rowh">${esc(rv)}</th>`+cols.map(cv=>`<td title="${esc(rv)} vs ${esc(cv)}">${statShort(pairStatus(a,rv,b,cv))}</td>`).join("")+"</tr>";
+  }
+  document.getElementById("mx-out").innerHTML=h+"</tbody></table>";
+}
+["mx-a","mx-b"].forEach(id=>document.getElementById(id).onchange=drawMatrix);
+document.getElementById("mx-f").oninput=drawMatrix;
+drawMatrix();
+</script>
+</body>
+</html>
