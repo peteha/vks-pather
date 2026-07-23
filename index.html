@@ -80,6 +80,49 @@ window.addEventListener("error", function(e){
   .small{font-size:12px;color:var(--muted)}
   .legend{margin:6px 0 0;font-size:12.5px;color:var(--ink2)}
   .legend span{margin-right:14px;white-space:nowrap}
+  /* Version windows (moving-window sliders) */
+  .mwrow{display:grid;grid-template-columns:200px 1fr;gap:18px;align-items:center;
+    padding:12px 10px;border-radius:10px;cursor:pointer;border:1px solid transparent}
+  .mwrow:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .mwrow.driver{background:color-mix(in srgb, var(--accent) 10%, transparent);border-color:var(--accent)}
+  .mwname b{display:block;font-size:14px}
+  .mwname small{color:var(--muted);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
+  .mwrow.driver .mwname b{color:var(--accent)}
+  .mwtag{display:none;font-size:10.5px;color:var(--accent);letter-spacing:.08em;text-transform:uppercase}
+  .mwrow.driver .mwtag{display:inline}
+  .mwvia{font-size:10.5px;color:var(--warn);letter-spacing:.04em}
+  .mwtrack{position:relative;height:56px}
+  .mwtrack.dense{height:68px}
+  .mwlane{position:absolute;left:0;right:0;top:14px;height:6px;border-radius:3px;background:var(--line)}
+  .mwband{position:absolute;top:10px;height:14px;border-radius:7px;background:color-mix(in srgb, var(--good) 16%, transparent);
+    border:1px solid color-mix(in srgb, var(--good) 45%, transparent);transition:left .25s ease,width .25s ease,opacity .25s ease}
+  .mwband.derived{background:none;border-style:dashed;border-color:var(--warn)}
+  .mwrow.driver .mwband{display:none}
+  .mwband.none{opacity:0}
+  .mwstop{position:absolute;top:13px;width:9px;height:9px;border-radius:50%;background:var(--chip);
+    border:1px solid var(--muted);transform:translateX(-50%);transition:background .2s,border-color .2s}
+  .mwstop.ok{background:var(--good);border-color:var(--good)}
+  .mwstop.dok{background:none;border:2px solid var(--warn);width:8px;height:8px}
+  .mwstop.inc{background:var(--crit);border-color:var(--crit)}
+  .mwstop.ns{background:var(--muted);border-color:var(--muted)}
+  .mwlab{position:absolute;top:31px;transform:translateX(-50%);
+    font:10.5px ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;
+    color:var(--muted);white-space:nowrap}
+  .mwlab.alt{top:47px}
+  .mwlab.in{color:var(--ink2);font-weight:600}
+  .mwrow.driver .mwlab.sel{color:var(--accent);font-weight:700}
+  .mwhandle{position:absolute;top:6px;width:22px;height:22px;border-radius:50%;background:var(--accent);
+    border:3px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.3);transform:translateX(-50%);
+    display:none;transition:left .1s ease;touch-action:none}
+  .mwrow.driver .mwhandle{display:block;cursor:grab}
+  .mwsummary{margin:14px 0 0;padding:12px 15px;background:var(--surface);border:1px solid var(--line);
+    border-radius:10px;font-size:13.5px;color:var(--ink2)}
+  .mwsummary b{color:var(--ink)}
+  .mwsummary .v{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;color:var(--ink)}
+  .mwlegend{display:flex;gap:18px;flex-wrap:wrap;margin:10px 2px 0;font-size:12px;color:var(--ink2)}
+  .mwlegend i{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:-1px;margin-right:5px;font-style:normal}
+  @media (max-width:760px){ .mwrow{grid-template-columns:1fr;gap:4px} }
+  @media (prefers-reduced-motion: reduce){ .mwband,.mwhandle,.mwstop{transition:none} }
   @media print{ header,nav,.row{display:none} section{display:none} section.on{display:block} .card,.step .body{break-inside:avoid} }
 </style>
 </head>
@@ -168,7 +211,7 @@ const LEGEND = `<p class="legend"><span class="s-ok">✓ Compatible</span><span 
 
 // ================= TABS =================
 const TABS = [
-  ["overview","Overview"],["roadmap","Roadmap"],["deploy","Deployment plan"],["packages","Packages"],["path","Path finder"],
+  ["overview","Overview"],["window","Version windows"],["roadmap","Roadmap"],["deploy","Deployment plan"],["packages","Packages"],["path","Path finder"],
   ["check","Compat checker"],["matrix","Matrix browser"]
 ];
 const nav=document.getElementById("tabs"), main=document.getElementById("main");
@@ -748,6 +791,192 @@ function drawMatrix(){
 ["mx-a","mx-b"].forEach(id=>document.getElementById(id).onchange=drawMatrix);
 document.getElementById("mx-f").oninput=drawMatrix;
 drawMatrix();
+
+// ================= VERSION WINDOWS (moving-window sliders) =================
+// Every stop/status below is a real Interoperability-matrix cell (via pairStatus).
+// Where the matrix has NO rows for a component pair, a clearly-marked "derived"
+// window is inferred transitively through a hub component — dashed, never green.
+(function(){
+const MW_ORDER = ["vCenter","ESX","NSX","Supervisor","VKS","WorkloadK8s","Addons"];
+const MW_ROLE = {vCenter:"management", ESX:"hosts", NSX:"network", Supervisor:"K8s control plane",
+                 VKS:"cluster service", WorkloadK8s:"TKr — what apps run on", Addons:"packages"};
+// interop-bearing versions per component
+const IHAS = {}; C.forEach(c=>IHAS[c]=new Set());
+const COVER = new Set();
+for(const [a,ai,b,bi] of DATA.pairs){
+  IHAS[C[a]].add(ai); IHAS[C[b]].add(bi);
+  COVER.add(C[a]+"|"+C[b]); COVER.add(C[b]+"|"+C[a]);
+}
+// slider stops: {label, vers[]} old->new; Supervisor grouped by K8s minor + train
+const svTrain = v => /vsc9/.test(v) ? "9" : "8";
+const svMinor = v => { const m=v.match(/^v?(\d+\.\d+)/); return m?m[1]:v; };
+const MW = {};
+MW_ORDER.forEach(c=>{
+  const asc = CAT[c].filter(v=>IHAS[c].has(VI[c][v])).reverse();
+  if(c==="Supervisor"){
+    const g=new Map();
+    for(const v of asc){
+      const k=svMinor(v)+"·"+svTrain(v);
+      if(!g.has(k)) g.set(k,{label:k, vers:[]});
+      g.get(k).vers.push(v);
+    }
+    MW[c]=[...g.values()].sort((x,y)=>{
+      const [xm,xt]=x.label.split("·"), [ym,yt]=y.label.split("·");
+      return vkeyCmp(xm,ym) || (xt<yt?-1:xt>yt?1:0);
+    });
+  } else MW[c]=asc.map(v=>({label:v, vers:[v]}));
+});
+function vkeyCmp(a,b){
+  const pa=a.split(".").map(Number), pb=b.split(".").map(Number);
+  for(let i=0;i<Math.max(pa.length,pb.length);i++){ const d=(pa[i]||0)-(pb[i]||0); if(d) return d; }
+  return 0;
+}
+// best direct status between a driver stop and a target stop ("any build" within groups)
+const RANK={"Compatible":3,"Incompatible":2,"Not Supported":1};
+function stopStatusDirect(cd, dstop, ct, tstop){
+  let best=null, via=null;
+  for(const dv of dstop.vers) for(const tv of tstop.vers){
+    const s=pairStatus(cd,dv,ct,tv);
+    if(s && (!best || RANK[s]>RANK[best])){ best=s; via=[dv,tv]; }
+  }
+  return best?{s:best,via}:null;
+}
+const HUBS=["vCenter","Supervisor","VKS","WorkloadK8s","NSX","ESX"];
+function hubFor(cd,ct){
+  return HUBS.find(h=>h!==cd&&h!==ct&&COVER.has(cd+"|"+h)&&COVER.has(h+"|"+ct))||null;
+}
+// derived (positive-only) compatibility through a hub
+function stopStatusDerived(cd, dstop, ct, tstop, hub){
+  for(const hstop of MW[hub]){
+    const a=stopStatusDirect(cd,dstop,hub,hstop);
+    if(!a||a.s!=="Compatible") continue;
+    const b=stopStatusDirect(hub,hstop,ct,tstop);
+    if(b&&b.s==="Compatible") return {s:"Compatible", hub, via:[a.via,b.via]};
+  }
+  return null;
+}
+let mwDriver="WorkloadK8s";
+const MW_SEL={};
+MW_ORDER.forEach(c=>MW_SEL[c]=MW[c].length-1);
+const tkrDef=MW.WorkloadK8s.findIndex(s=>s.label==="1.32.7");
+if(tkrDef>=0) MW_SEL.WorkloadK8s=tkrDef;
+
+document.getElementById("sec-window").innerHTML = `
+<div class="card"><h3>The moving window — slide one component, see how far the rest can range</h3>
+<p class="small" style="margin:0 0 6px">Kubernetes ships a new minor roughly every four months, and each layer of the
+stack supports only a window of versions. Click a row to make it the <b>driver</b>, drag its handle (or use ← →), and
+the green windows show the versions of every other layer that the Interoperability matrix marks “Compatible” with that
+choice — up the stack and down. Dots are the per-version truth from the matrix; the band spans the first to last
+compatible version. vSphere Supervisor is grouped by its Kubernetes minor and train (·8 = vSphere 8 builds vsc0.1.x,
+·9 = vSphere 9 builds vsc9.x); a group is green if any build in it has a Compatible cell — hover a dot for the exact build.
+Caveat: the matrix's vCenter/ESX interop rows are coarse (no patch letters), so windows touching them reflect
+ship-vehicle pairings — cross-check per-patch support in release notes (see the Overview flags).</p>
+<div id="mw-rows"></div>
+<div class="mwlegend">
+  <span><i style="background:var(--accent)"></i>driver — the version chosen</span>
+  <span><i style="background:var(--good)"></i>Compatible (matrix cell)</span>
+  <span><i style="background:var(--crit)"></i>Incompatible</span>
+  <span><i style="background:var(--muted)"></i>Not Supported</span>
+  <span><i style="background:var(--chip);border:1px solid var(--muted)"></i>no matrix data</span>
+  <span><i style="background:none;border:2px solid var(--warn)"></i>derived via another component (no direct rows — inference, not a matrix cell)</span>
+</div>
+<div class="mwsummary" id="mw-summary"></div>
+</div>`;
+
+const rowsEl=document.getElementById("mw-rows");
+MW_ORDER.forEach(c=>{
+  const stops=MW[c], n=stops.length, cw=100/n, dense=n>12;
+  const row=document.createElement("div");
+  row.className="mwrow"; row.id="mw-"+c; row.tabIndex=0;
+  row.setAttribute("role","slider"); row.setAttribute("aria-label",(LABELS[c]||c)+" version window");
+  const marks=stops.map((s,i)=>{
+    const x=((i+0.5)*cw).toFixed(3)+"%";
+    return `<div class="mwstop" style="left:${x}" data-i="${i}"></div>
+      <div class="mwlab ${dense&&i%2?"alt":""}" style="left:${x}" data-i="${i}">${esc(s.label)}</div>`;
+  }).join("");
+  row.innerHTML=`<div class="mwname"><b>${LABELS[c]||c}</b><small>${MW_ROLE[c]}</small>
+      <span class="mwtag">driving</span> <span class="mwvia" id="mwvia-${c}"></span></div>
+    <div class="mwtrack${dense?" dense":""}"><div class="mwlane"></div><div class="mwband"></div>${marks}
+      <div class="mwhandle"></div></div>`;
+  rowsEl.appendChild(row);
+  const track=row.querySelector(".mwtrack");
+  const idxAt=e=>{
+    const r=track.getBoundingClientRect();
+    return Math.floor(Math.min(Math.max((e.clientX-r.left)/r.width,0),0.9999)*n);
+  };
+  row.addEventListener("pointerdown",e=>{
+    mwDriver=c;
+    if(e.target.closest(".mwtrack")) MW_SEL[c]=idxAt(e);
+    try{ row.setPointerCapture(e.pointerId); }catch(_){}
+    row.dataset.drag="1";
+    drawMW(); e.preventDefault();
+  });
+  row.addEventListener("pointermove",e=>{
+    if(row.dataset.drag==="1"&&mwDriver===c){
+      const i=idxAt(e);
+      if(i!==MW_SEL[c]){ MW_SEL[c]=i; drawMW(); }
+    }
+  });
+  row.addEventListener("pointerup",()=>{ delete row.dataset.drag; });
+  row.addEventListener("keydown",e=>{
+    if(e.key==="ArrowLeft"||e.key==="ArrowRight"){
+      mwDriver=c;
+      MW_SEL[c]=Math.min(Math.max(MW_SEL[c]+(e.key==="ArrowRight"?1:-1),0),n-1);
+      drawMW(); e.preventDefault();
+    }
+    if(e.key===" "||e.key==="Enter"){ mwDriver=c; drawMW(); e.preventDefault(); }
+  });
+});
+
+function drawMW(){
+  const cd=mwDriver, dstop=MW[cd][MW_SEL[cd]];
+  const parts=[];
+  MW_ORDER.forEach(c=>{
+    const row=document.getElementById("mw-"+c), stops=MW[c], n=stops.length, cw=100/n;
+    const isDrv=c===cd;
+    row.classList.toggle("driver",isDrv);
+    row.setAttribute("aria-valuetext",isDrv?stops[MW_SEL[c]].label:"window");
+    const viaEl=document.getElementById("mwvia-"+c);
+    const direct=COVER.has(cd+"|"+c), hub=(!isDrv&&!direct)?hubFor(cd,c):null;
+    viaEl.textContent = (!isDrv&&!direct) ? (hub?`derived via ${LABELS[hub]||hub}`:"no path in matrix") : "";
+    const res=stops.map(t=>{
+      if(isDrv) return null;
+      return direct ? stopStatusDirect(cd,dstop,c,t)
+                    : (hub ? stopStatusDerived(cd,dstop,c,t,hub) : null);
+    });
+    row.querySelectorAll(".mwstop").forEach((el,i)=>{
+      el.className="mwstop";
+      const r=res[i];
+      if(isDrv||!r){ el.title=stops[i].vers.join(", "); return; }
+      el.classList.add(r.s==="Compatible"?(r.hub?"dok":"ok"):r.s==="Incompatible"?"inc":"ns");
+      el.title = r.hub
+        ? `${stops[i].label}: derived Compatible via ${LABELS[r.hub]||r.hub} (matrix cells: ${r.via[0][0]} ↔ ${r.via[0][1]}, ${r.via[1][0]} ↔ ${r.via[1][1]})`
+        : `${r.via[1]} vs ${r.via[0]}: ${r.s}`;
+    });
+    row.querySelectorAll(".mwlab").forEach((el,i)=>{
+      el.classList.toggle("in",!isDrv&&res[i]!==null&&res[i].s==="Compatible");
+      el.classList.toggle("sel",isDrv&&i===MW_SEL[c]);
+    });
+    const band=row.querySelector(".mwband");
+    const okIdx=res.map((r,i)=>r&&r.s==="Compatible"?i:-1).filter(i=>i>=0);
+    if(!isDrv&&okIdx.length){
+      const lo=okIdx[0], hi=okIdx[okIdx.length-1];
+      band.classList.remove("none");
+      band.classList.toggle("derived",!!hub);
+      band.style.left=(lo*cw+cw*0.15).toFixed(3)+"%";
+      band.style.width=((hi-lo+1)*cw-cw*0.3).toFixed(3)+"%";
+      parts.push(`${LABELS[c]||c} <span class="v">${esc(stops[lo].label)}${hi>lo?"–"+esc(stops[hi].label):""}</span>${hub?" <span class='mwvia'>(derived)</span>":""}`);
+    } else {
+      band.classList.add("none");
+      if(!isDrv) parts.push(`${LABELS[c]||c} <span class="v">${direct||hub?"none":"no matrix rows"}</span>`);
+    }
+    if(isDrv) row.querySelector(".mwhandle").style.left=((MW_SEL[c]+0.5)*cw).toFixed(3)+"%";
+  });
+  document.getElementById("mw-summary").innerHTML=
+    `<b>${LABELS[cd]||cd} ${esc(dstop.label)}</b>${dstop.vers.length>1?` <span class="small">(${dstop.vers.length} builds in this line)</span>`:""} — Compatible window per component: ${parts.join(" · ")}.`;
+}
+drawMW();
+})();
 </script>
 </body>
 </html>
