@@ -954,7 +954,9 @@ function pinsExcept(c){ return [...PIN].filter(p=>p!==c).map(p=>[p, MW[p][MW_SEL
 // excluded if Incompatible/Not Supported with ANY pin; in-window if Compatible
 // (direct or derived) with at least one pin and excluded by none; unknown otherwise.
 function comboStatus(c, stop, pins){
-  let ok=false, derived=false, bad=null, any=false; const notes=[];
+  // Direct evidence beats inference: a stop is "derived" only when its green
+  // verdict rests solely on hub inference, never when a direct cell backs it.
+  let okDirect=false, okDerived=false, bad=null, any=false; const notes=[];
   for(const [pc,pstop] of pins){
     const direct=COVER.has(pc+"|"+c);
     const hub=direct?null:hubFor(pc,c);
@@ -962,12 +964,12 @@ function comboStatus(c, stop, pins){
     if(!r){ notes.push(`vs ${LABELS[pc]||pc} ${pstop.label}: no matrix data`); continue; }
     any=true;
     notes.push(`vs ${LABELS[pc]||pc} ${pstop.label}: ${r.s}${r.hub?` (derived via ${LABELS[r.hub]||r.hub})`:""}`);
-    if(r.s==="Compatible"){ ok=true; if(r.hub) derived=true; }
+    if(r.s==="Compatible"){ if(r.hub) okDerived=true; else okDirect=true; }
     else if(r.s==="Incompatible") bad="Incompatible";
     else if(!bad) bad="Not Supported";
   }
   if(bad) return {cls:bad==="Incompatible"?"inc":"ns", ok:false, any:true, notes};
-  if(ok) return {cls:derived?"dok":"ok", ok:true, derived, any:true, notes};
+  if(okDirect||okDerived) return {cls:okDirect?"ok":"dok", ok:true, derived:!okDirect, any:true, notes};
   return {cls:null, ok:false, any, notes};
 }
 function drawMW(){
@@ -995,7 +997,8 @@ function drawMW(){
       el.classList.toggle("sel",pinned&&i===MW_SEL[c]);
     });
     const band=row.querySelector(".mwband");
-    const bandDerived=okIdx.length?res.slice(okIdx[0],okIdx[okIdx.length-1]+1).some(r=>r&&r.derived):false;
+    // band is dashed-derived only when EVERY in-window version is inference-only
+    const bandDerived=okIdx.length?okIdx.every(i=>res[i].derived):false;
     if(okIdx.length){
       const lo=okIdx[0], hi=okIdx[okIdx.length-1];
       band.classList.remove("none");
@@ -1007,7 +1010,9 @@ function drawMW(){
       band.classList.add("none");
       if(!pinned&&cons.length) parts.push(`${LABELS[c]||c} <span class="v">${rowAny?"none":"no matrix data"}</span>`);
     }
-    document.getElementById("mwvia-"+c).textContent = (!pinned&&okIdx.length&&bandDerived)?"derived — no direct matrix rows":"";
+    const rowHasDirect=cons.some(([pc])=>COVER.has(pc+"|"+c));
+    document.getElementById("mwvia-"+c).textContent =
+      (cons.length&&!rowHasDirect)?"derived — no direct matrix rows vs pinned components":"";
     if(pinned){
       row.querySelector(".mwhandle").style.left=((MW_SEL[c]+0.5)*cw).toFixed(3)+"%";
       pinParts.push(`${LABELS[c]||c} <span class="v">${esc(stops[MW_SEL[c]].label)}</span>`);
