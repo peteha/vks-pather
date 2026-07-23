@@ -11,15 +11,20 @@ Interoperability Matrix. This tool pulls one exported snapshot of that matrix in
 single interactive page so the whole journey can be reasoned about — and explained to
 stakeholders — in one place.
 
-Open **`index.html`** in any browser. No server, no build step, no dependencies, and no
-network access: a strict Content-Security-Policy blocks all external requests, so
-nothing leaves the page.
+Open **`index.html`** (the full planner, titled *VCF - VKS Update Planner*) or
+**`stack-builder.html`** (the standalone *VCF - VKS Stack Builder*) in any browser. No
+server, no build step, no dependencies, and no network access: a strict
+Content-Security-Policy blocks all external requests, so nothing leaves the page.
 
 ## What's inside
 
 - **Overview** — an editable current-state (set your own versions), the recommended
   9.1-ready hold state, the validated 9.1 end state, confirmed 9.x dead ends, and known
   matrix coverage gaps.
+- **Stack Builder** — interactive "moving window" sliders: pin versions across the
+  stack and every other layer narrows to its compatible window; combinations that
+  would leave any layer without options are blocked before they can be selected.
+  Also shipped as the standalone `stack-builder.html`.
 - **Roadmap** — four sequenced deployment options (full path to 9.1 via 9.0.2, pre-9.1
   handoff, minimal-supported, max-8.x), with done / applies / past-target chips that
   react to the current-state you set.
@@ -79,10 +84,12 @@ words, re-derive the analysis before relying on it.
 ## Repo layout
 
 ```
-index.html              the explorer (prebuilt output — open this)
-explorer_template.html  app shell (HTML/CSS/JS); data is injected at build time
-rebuild_explorer.py     one-shot build: parses the 12 CSVs → writes index.html
-EXPORT_DATE.txt         date of the matrix export the page was built from
+index.html                  VCF - VKS Update Planner (prebuilt output — open this)
+stack-builder.html          VCF - VKS Stack Builder (standalone moving-window tool)
+explorer_template.html      planner shell (HTML/CSS/JS); data is injected at build time
+stack_builder_template.html standalone shell; reuses the planner's Stack Builder blocks
+rebuild_explorer.py         one-shot build: parses the 12 CSVs → writes both pages
+EXPORT_DATE.txt             date of the matrix export the pages were built from
 ```
 
 ## Disclaimer

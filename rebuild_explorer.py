@@ -171,6 +171,31 @@ out = ROOT / "index.html"
 payload = json.dumps(data, separators=(",", ":")).replace("</", "<\\/")
 out.write_text(tpl.replace("__DATA__", "const DATA=" + payload + ";"))
 print(f"OK  {out}")
+
+# ---------- 5. standalone Stack Builder ----------
+# stack_builder_template.html reuses the explorer's Stack Builder CSS/JS blocks,
+# extracted between markers so the tool has a single source of truth.
+sb_tpl_path = ROOT / "stack_builder_template.html"
+if sb_tpl_path.exists():
+    def between(text, start, end, what):
+        i, j = text.find(start), text.find(end)
+        if i < 0 or j < 0 or j <= i:
+            sys.exit(f"ERROR: {what} markers missing/misordered in explorer_template.html")
+        return text[i + len(start):j]
+    mw_css = between(tpl, "/*MW-CSS-START*/", "/*MW-CSS-END*/", "MW-CSS")
+    mw_js = between(tpl, "//MW-JS-START", "//MW-JS-END", "MW-JS")
+    sb = sb_tpl_path.read_text()
+    for ph in ("__DATA__", "__MW_CSS__", "__MW_JS__"):
+        if ph not in sb:
+            sys.exit(f"ERROR: stack_builder_template.html has no {ph} placeholder")
+    sb = (sb.replace("__MW_CSS__", mw_css)
+            .replace("__MW_JS__", mw_js)
+            .replace("__DATA__", "const DATA=" + payload + ";"))
+    sb_out = ROOT / "stack-builder.html"
+    sb_out.write_text(sb)
+    print(f"OK  {sb_out}")
+else:
+    print("NOTE: stack_builder_template.html missing — stack-builder.html not built")
 print(f"    interop cells: {len(interop)}  upgrade cells: {len(upgrade)}  cross-pairs: {len(pair_arr)}")
 for c in comps:
     print(f"    {c}: {len(catalog[c])} versions | newest: {catalog[c][0] if catalog[c] else '-'}")

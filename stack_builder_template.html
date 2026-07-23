@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>VCF - VKS Stack Builder</title>
+<script>
+window.addEventListener("error", function(e){
+  if(document.getElementById("js-err") || !document.body) return;
+  var d = document.createElement("div");
+  d.id = "js-err";
+  d.style.cssText = "margin:16px 24px;padding:12px 16px;border:1px solid #d03b3b;border-left:4px solid #d03b3b;border-radius:8px;background:rgba(208,59,59,.08);font-size:13px";
+  d.textContent = "This page hit a script error — reload; if it persists, rebuild (python3 rebuild_explorer.py) and check the browser console. Detail: " + (e.message || "unknown error");
+  document.body.insertBefore(d, document.body.firstChild);
+});
+</script>
+<style>
+  :root{
+    --surface:#fcfcfb; --page:#f9f9f7; --ink:#0b0b0b; --ink2:#52514e; --muted:#898781;
+    --good:#0ca30c; --good-text:#006300; --crit:#d03b3b; --warn:#b97a00;
+    --line:#e4e3de; --accent:#2f5fd0; --chip:#eeede8;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --surface:#1a1a19; --page:#0d0d0d; --ink:#fff; --ink2:#c3c2b7; --muted:#898781;
+      --good-text:#5fd35f; --warn:#fab219; --line:#33322f; --accent:#7ba3f0; --chip:#262521;}
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--page);color:var(--ink);
+    font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  header{padding:20px 24px 0;max-width:1200px}
+  h1{font-size:19px;margin:0 0 2px}
+  .sub{color:var(--ink2);font-size:13px;margin:0 0 14px}
+  main{padding:6px 24px 48px;max-width:1200px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:0 0 14px}
+  .card h3{margin:0 0 8px;font-size:14.5px}
+  .small{font-size:12px;color:var(--muted)}
+  .flag{border-left:3px solid var(--warn);padding:8px 12px;background:var(--chip);border-radius:0 8px 8px 0;margin:8px 0;font-size:13px}
+  .flag b{color:var(--warn)}
+  .pill{display:inline-block;background:var(--chip);border-radius:20px;padding:1px 10px;font-size:12px;color:var(--ink2);margin-right:6px}
+  .row{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-end;margin:0 0 12px}
+  .s-inc{color:var(--crit);font-weight:600}
+  a{color:var(--accent)}
+__MW_CSS__
+</style>
+</head>
+<body>
+<header>
+  <h1>VCF - VKS Stack Builder</h1>
+  <p class="sub">Interactive compatibility windows for a VCF stack running vSphere Kubernetes Service (VKS)</p>
+</header>
+<main>
+<div class="card"><h3>What this tool does</h3>
+<p style="font-size:13px;color:var(--ink2);margin:0 0 8px">
+Kubernetes ships a new minor version roughly every four months, and every layer of the stack — vCenter, ESX, NSX, the
+vSphere Supervisor, VKS, the workload-cluster Kubernetes releases (TKr) and their add-on packages — supports only a
+<b>window</b> of the other layers' versions. This tool makes that moving window visible: <b>pin</b> a version on any
+layer and the green bands show how far every other layer can range while staying supported; add more pins to narrow the
+stack down to a concrete, fully supported combination. A supported solution requires <b>every</b> layer to keep at least
+one compatible version, so any version that would leave another layer with no options is dimmed and cannot be selected.</p>
+<p style="font-size:13px;color:var(--ink2);margin:0">
+<b>Where the data comes from:</b> every “Compatible / Incompatible / Not Supported” verdict is a cell from the official
+<a href="https://interopmatrix.broadcom.com/Interoperability" target="_blank" rel="noopener noreferrer">Broadcom Product
+Interoperability Matrix</a>, exported <b><span class="asof">16 Jul 2026</span></b>. Where the matrix has no direct rows
+for a component pair, the tool shows a clearly marked <b>derived</b> window inferred through an intermediate component —
+labelled inference, not a matrix cell. The matrix is a point-in-time snapshot: re-export it and re-verify before relying
+on a combination. Independent analysis — not Broadcom guidance; not affiliated with Broadcom Inc.</p></div>
+<section id="sec-window" style="display:block"></section>
+</main>
+<footer style="padding:0 24px 36px;max-width:1200px">
+  <div style="border:1px solid var(--line);border-left:4px solid var(--warn);border-radius:8px;padding:12px 16px;background:var(--surface);font-size:12.5px;color:var(--ink2);line-height:1.55">
+    <b style="color:var(--ink)">Data source:</b> official
+    <a href="https://interopmatrix.broadcom.com/Upgrade" target="_blank" rel="noopener noreferrer">Broadcom Product Interoperability Matrix</a>,
+    exported <b style="color:var(--ink)"><span class="asof">16 Jul 2026</span></b>.
+    Sequencing and impact commentary is the author’s interpretation, not Broadcom guidance. Not affiliated with Broadcom Inc.
+  </div>
+</footer>
+
+<script>__DATA__</script>
+<script>
+"use strict";
+// Shared helpers (kept in sync with explorer_template.html by the build's
+// marker extraction — only this small core is duplicated).
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+if(DATA.asof) document.querySelectorAll(".asof").forEach(e=>{ e.textContent = DATA.asof; });
+const C = DATA.components;
+const CAT = DATA.catalog;
+const ST = DATA.statuses;
+const LABELS = {vCenter:"vCenter", ESX:"ESX", NSX:"NSX", Supervisor:"vSphere Supervisor",
+                VKS:"vSphere Kubernetes Service (VKS)", WorkloadK8s:"Workload cluster K8s release (TKr)", Addons:"VKS Add-ons / packages"};
+const P = new Map();
+for(const [a,ai,b,bi,s] of DATA.pairs){
+  P.set(a+":"+ai+"|"+b+":"+bi, s);
+  P.set(b+":"+bi+"|"+a+":"+ai, s);
+}
+const VI = {}; C.forEach((c,i)=>{ VI[c]={}; CAT[c].forEach((v,j)=>VI[c][v]=j); });
+function pairStatus(ca,va,cb,vb){
+  const ai=VI[ca][va], bi=VI[cb][vb];
+  if(ai===undefined||bi===undefined) return null;
+  const s=P.get(C.indexOf(ca)+":"+ai+"|"+C.indexOf(cb)+":"+bi);
+  return s===undefined?null:ST[s];
+}
+__MW_JS__
+</script>
+</body>
+</html>

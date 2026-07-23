@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
-<title>vSphere 8 VKS — Upgrade &amp; Interop Explorer</title>
+<title>VCF - VKS Update Planner</title>
 <script>
 // Visible failure instead of silently blank tabs: one syntax error in the main
 // script block would otherwise blank the whole page with no explanation.
@@ -80,7 +80,9 @@ window.addEventListener("error", function(e){
   .small{font-size:12px;color:var(--muted)}
   .legend{margin:6px 0 0;font-size:12.5px;color:var(--ink2)}
   .legend span{margin-right:14px;white-space:nowrap}
-  /* Version windows (moving-window sliders) */
+  /*MW-CSS-START*/
+  /* Stack Builder (moving-window sliders) — block is extracted verbatim into
+     stack-builder.html by rebuild_explorer.py; keep the markers intact */
   .mwrow{display:grid;grid-template-columns:200px 1fr;gap:18px;align-items:center;
     padding:12px 10px;border-radius:10px;cursor:pointer;border:1px solid transparent}
   .mwrow:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
@@ -124,12 +126,13 @@ window.addEventListener("error", function(e){
   .mwlegend i{display:inline-block;width:10px;height:10px;border-radius:50%;vertical-align:-1px;margin-right:5px;font-style:normal}
   @media (max-width:760px){ .mwrow{grid-template-columns:1fr;gap:4px} }
   @media (prefers-reduced-motion: reduce){ .mwband,.mwhandle,.mwstop{transition:none} }
+  /*MW-CSS-END*/
   @media print{ header,nav,.row{display:none} section{display:none} section.on{display:block} .card,.step .body{break-inside:avoid} }
 </style>
 </head>
 <body>
 <header>
-  <h1>vSphere 8 VKS — Upgrade &amp; Interoperability Explorer</h1>
+  <h1>VCF - VKS Update Planner</h1>
   <p class="sub">Modeled from Broadcom interoperability &amp; upgrade matrix exports (12 CSVs from interopmatrix.broadcom.com, <span class="asof">16 Jul 2026</span>) · strategy: 9.1-ready hold on vSphere 8, then upgrade to 9.1 via 9.0.2 · <b>independent analysis — not Broadcom guidance (see note below)</b></p>
 </header>
 <nav id="tabs"></nav>
@@ -212,7 +215,7 @@ const LEGEND = `<p class="legend"><span class="s-ok">✓ Compatible</span><span 
 
 // ================= TABS =================
 const TABS = [
-  ["overview","Overview"],["window","Version windows"],["roadmap","Roadmap"],["deploy","Deployment plan"],["packages","Packages"],["path","Path finder"],
+  ["overview","Overview"],["window","Stack Builder"],["roadmap","Roadmap"],["deploy","Deployment plan"],["packages","Packages"],["path","Path finder"],
   ["check","Compat checker"],["matrix","Matrix browser"]
 ];
 const nav=document.getElementById("tabs"), main=document.getElementById("main");
@@ -793,7 +796,10 @@ function drawMatrix(){
 document.getElementById("mx-f").oninput=drawMatrix;
 drawMatrix();
 
-// ================= VERSION WINDOWS (moving-window sliders) =================
+//MW-JS-START
+// ================= STACK BUILDER (moving-window sliders) =================
+// Block is extracted verbatim into stack-builder.html by rebuild_explorer.py;
+// it must only use DATA, C, CAT, VI, pairStatus, esc, LABELS from outside.
 // Every stop/status below is a real Interoperability-matrix cell (via pairStatus).
 // Where the matrix has NO rows for a component pair, a clearly-marked "derived"
 // window is inferred transitively through a hub component — dashed, never green.
@@ -1086,6 +1092,7 @@ function drawMW(){
 }
 drawMW();
 })();
+//MW-JS-END
 </script>
 </body>
 </html>
