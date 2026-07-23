@@ -918,15 +918,12 @@ if(tkrDef>=0){ MW_SEL.WorkloadK8s=tkrDef; PIN.add("WorkloadK8s"); }
 
 document.getElementById("sec-window").innerHTML = `
 <div class="card"><h3>The moving window — slide one component, see how far the rest can range</h3>
-<p class="small" style="margin:0 0 6px"><b>How to use:</b> click a version to <b>pin</b> it — every pin narrows the
-other layers to the versions the Interoperability matrix marks “Compatible” with <i>all</i> pins, up the stack and down.
-Versions outside the windows — or that would leave another layer with no compatible version at all — are dimmed and
-unselectable; hover any dot for the verdicts behind it. Click a pinned version again to release it; ← → slides a pin
-along its allowed versions. Dots are the per-version truth from the matrix; the band spans the first to last compatible
-version. vSphere Supervisor is grouped by its Kubernetes minor and train (·8 = vSphere 8 builds vsc0.1.x, ·9 = vSphere 9
-builds vsc9.x); a group is green if any build in it has a Compatible cell — hover a dot for the exact build. Caveat: the
-matrix's vCenter/ESX interop rows are coarse (no patch letters), so windows touching them reflect ship-vehicle
-pairings — cross-check per-patch support in the release notes.</p>
+<p class="small" style="margin:0 0 6px"><b>How to use:</b> click a version to pin it. The green bands show
+which versions of every other layer work with your pins. Dimmed versions can’t be picked — they don’t fit, or they
+would leave another layer with no options. Click a pin again to remove it; ← → moves it. Hover any dot to see why.
+vSphere Supervisor is grouped by its Kubernetes version — ·8 = vSphere 8 builds, ·9 = vSphere 9 builds.
+Note: the matrix lists vCenter/ESX without patch letters, so every patch shares its line’s results — check the
+release notes for patch-level detail.</p>
 <div id="mw-rows"></div>
 <div id="mw-warn"></div>
 <div class="row" style="margin:10px 0 0"><button id="mw-clear" style="font:inherit;font-size:12.5px;padding:5px 12px;border:1px solid var(--line);border-radius:7px;background:var(--chip);color:var(--ink);cursor:pointer">Clear all pins</button></div>
