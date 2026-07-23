@@ -96,6 +96,8 @@ window.addEventListener("error", function(e){
   .mwvia{font-size:10.5px;color:var(--warn);letter-spacing:.04em}
   .mwtrack{position:relative;height:56px}
   .mwtrack.dense{height:68px}
+  .mwtrack.dense3{height:86px}
+  .mwtrack.dense3 .mwlab{font-size:9.5px}
   .mwlane{position:absolute;left:0;right:0;top:14px;height:6px;border-radius:3px;background:var(--line)}
   .mwband{position:absolute;top:10px;height:14px;border-radius:7px;background:color-mix(in srgb, var(--good) 16%, transparent);
     border:1px solid color-mix(in srgb, var(--good) 45%, transparent);transition:left .25s ease,width .25s ease,opacity .25s ease}
@@ -111,6 +113,7 @@ window.addEventListener("error", function(e){
     font:10.5px ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;
     color:var(--muted);white-space:nowrap}
   .mwlab.alt{top:47px}
+  .mwlab.alt2{top:63px}
   .mwlab.in{color:var(--ink2);font-weight:600}
   .mwstop.off,.mwlab.off{opacity:.3}
   .mwrow.pinned .mwlab.sel{color:var(--accent);font-weight:700}
@@ -817,21 +820,47 @@ for(const [a,ai,b,bi] of DATA.pairs){
 // slider stops: {label, vers[]} old->new; Supervisor grouped by K8s minor + train
 const svTrain = v => /vsc9/.test(v) ? "9" : "8";
 const svMinor = v => { const m=v.match(/^v?(\d+\.\d+)/); return m?m[1]:v; };
+// vCenter/ESX/NSX interop rows are coarse (no patch letters), so their sliders
+// carry the FULL catalog (incl. patch/minor builds) and each build resolves its
+// interop verdicts through its line's row — the same mapping the Compat checker
+// uses; the tooltip discloses which row answered.
+const LINE_OF=(c,v)=>{
+  if(IHAS[c].has(VI[c][v])) return v;
+  const cands=[];
+  if(c==="NSX"){
+    const m=v.match(/^(\d+\.\d+\.\d+)/); if(m) cands.push(m[1]+".0", m[1]);
+    const m2=v.match(/^(\d+\.\d+)/); if(m2) cands.push(m2[1]);
+  }
+  if(c==="vCenter"||c==="ESX"){
+    const m=v.match(/^(8\.0U\d|8\.0)/); if(m) cands.push(m[1]);
+    const m2=v.match(/^(\d+\.\d+)/); if(m2) cands.push(m2[1]+".0.0");
+  }
+  for(const cd of cands){ const i=VI[c][cd]; if(i!==undefined&&IHAS[c].has(i)) return cd; }
+  return null;
+};
 const MW = {};
 MW_ORDER.forEach(c=>{
-  const asc = CAT[c].filter(v=>IHAS[c].has(VI[c][v])).reverse();
   if(c==="Supervisor"){
+    const asc = CAT[c].filter(v=>IHAS[c].has(VI[c][v])).reverse();
     const g=new Map();
     for(const v of asc){
       const k=svMinor(v)+"·"+svTrain(v);
-      if(!g.has(k)) g.set(k,{label:k, vers:[]});
-      g.get(k).vers.push(v);
+      if(!g.has(k)) g.set(k,{label:k, vers:[], lv:[]});
+      g.get(k).vers.push(v); g.get(k).lv.push(v);
     }
     MW[c]=[...g.values()].sort((x,y)=>{
       const [xm,xt]=x.label.split("·"), [ym,yt]=y.label.split("·");
       return vkeyCmp(xm,ym) || (xt<yt?-1:xt>yt?1:0);
     });
-  } else MW[c]=asc.map(v=>({label:v, vers:[v]}));
+  } else if(c==="vCenter"||c==="ESX"||c==="NSX"){
+    MW[c]=CAT[c].slice().reverse().map(v=>{
+      const line=LINE_OF(c,v);
+      return {label:v, vers:[v], lv:line?[line]:[], line};
+    });
+  } else {
+    MW[c]=CAT[c].filter(v=>IHAS[c].has(VI[c][v])).reverse()
+      .map(v=>({label:v, vers:[v], lv:[v]}));
+  }
 });
 function vkeyCmp(a,b){
   const pa=a.split(".").map(Number), pb=b.split(".").map(Number);
@@ -842,7 +871,7 @@ function vkeyCmp(a,b){
 const RANK={"Compatible":3,"Incompatible":2,"Not Supported":1};
 function stopStatusDirect(cd, dstop, ct, tstop){
   let best=null, via=null;
-  for(const dv of dstop.vers) for(const tv of tstop.vers){
+  for(const dv of dstop.lv) for(const tv of tstop.lv){
     const s=pairStatus(cd,dv,ct,tv);
     if(s && (!best || RANK[s]>RANK[best])){ best=s; via=[dv,tv]; }
   }
@@ -914,18 +943,19 @@ pairings — cross-check per-patch support in the release notes.</p>
 
 const rowsEl=document.getElementById("mw-rows");
 MW_ORDER.forEach(c=>{
-  const stops=MW[c], n=stops.length, cw=100/n, dense=n>12;
+  const stops=MW[c], n=stops.length, cw=100/n, dense3=n>26, dense=!dense3&&n>12;
   const row=document.createElement("div");
   row.className="mwrow"; row.id="mw-"+c; row.tabIndex=0;
   row.setAttribute("role","slider"); row.setAttribute("aria-label",(LABELS[c]||c)+" version window");
+  const labCls=i=>dense3?(i%3===1?" alt":i%3===2?" alt2":""):(dense&&i%2?" alt":"");
   const marks=stops.map((s,i)=>{
     const x=((i+0.5)*cw).toFixed(3)+"%";
     return `<div class="mwstop" style="left:${x}" data-i="${i}"></div>
-      <div class="mwlab ${dense&&i%2?"alt":""}" style="left:${x}" data-i="${i}">${esc(s.label)}</div>`;
+      <div class="mwlab${labCls(i)}" style="left:${x}" data-i="${i}">${esc(s.label)}</div>`;
   }).join("");
   row.innerHTML=`<div class="mwname"><b>${LABELS[c]||c}</b><small>${MW_ROLE[c]}</small>
       <span class="mwtag">pinned</span> <span class="mwvia" id="mwvia-${c}"></span></div>
-    <div class="mwtrack${dense?" dense":""}"><div class="mwlane"></div><div class="mwband"></div>${marks}
+    <div class="mwtrack${dense3?" dense3":dense?" dense":""}"><div class="mwlane"></div><div class="mwband"></div>${marks}
       <div class="mwhandle"></div></div>`;
   rowsEl.appendChild(row);
   const track=row.querySelector(".mwtrack");
@@ -1036,7 +1066,9 @@ function drawMW(){
       if(r&&r.cls) el.classList.add(r.cls);
       if(r&&r.ok) okIdx.push(i);
       if(!allow[i].ok) el.classList.add("off");
-      let t=stops[i].vers.join(", ")+(r&&r.notes.length?"\n"+r.notes.join("\n"):"");
+      let t=stops[i].vers.join(", ")
+        +(stops[i].line&&stops[i].line!==stops[i].label?` — interop verdicts via the ${stops[i].line} matrix row`:"")
+        +(r&&r.notes.length?"\n"+r.notes.join("\n"):"");
       if(allow[i].closes.length)
         t+=`\n⚠ Pinning this would leave ${allow[i].closes.map(l=>LABELS[l]||l).join(" and ")} with no compatible version — unsupported solution.`;
       el.title=t;
