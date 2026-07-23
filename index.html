@@ -976,11 +976,12 @@ function pathBetween(c, sIdx, eIdx){  // shortest Compatible hop chain between s
 
 document.getElementById("sec-window").innerHTML = `
 <div class="card"><h3>The moving window — slide one component, see how far the rest can range</h3>
-<p class="small" style="margin:0 0 6px"><b>How to use:</b> pick <b>① Starting release</b> and click versions to set
-where the stack is today, then <b>② Exit release</b> to set where it should land. The green bands show which versions
-of every other layer work with the state you are editing. Dimmed versions can’t be picked — they don’t fit, they would
-leave another layer with no options, or (for exits) there is no supported upgrade path from the start. Click a marker
-again to remove it; ← → moves it. Hover any dot to see why. The journey card below lists the upgrade hops per layer.
+<p class="small" style="margin:0 0 6px"><b>How to use:</b> <b>click</b> a version to set where the stack is today
+(starting release, blue); <b>right-click or ⌘-click</b> to set where it should land (exit release, purple) — the
+①/② toggle does the same and shows which state's windows you are viewing. Dimmed versions can’t be picked — they
+don’t fit, they would leave another layer with no options, or (for exits) there is no supported upgrade path from the
+start. Click a marker again to remove it; ← → moves it. Hover any dot to see why. The journey card below lists the
+upgrade hops per layer.
 vSphere Supervisor is grouped by its Kubernetes version — ·8 = vSphere 8 builds, ·9 = vSphere 9 builds.
 Note: the matrix lists vCenter/ESX without patch letters, so every patch shares its line’s results — check the
 release notes for patch-level detail.</p>
@@ -1032,8 +1033,12 @@ MW_ORDER.forEach(c=>{
       if(i>=0&&i<n&&!els[i].classList.contains("off")) return i;
     return null;
   };
+  row.addEventListener("contextmenu",e=>{ if(e.target.closest(".mwtrack")) e.preventDefault(); });
   row.addEventListener("pointerdown",e=>{
     if(!e.target.closest(".mwtrack")){ row.focus(); return; }
+    // plain click = starting release; right-click / cmd-click / ctrl-click = exit release
+    const wantMode=(e.button===2||e.metaKey||e.ctrlKey)?"exit":"start";
+    if(MODE!==wantMode){ MODE=wantMode; drawMW(); }   // refresh allowed-set classes first
     const m=activeMap(), raw=idxAt(e);
     if(m.has(c)&&raw===m.get(c)){ m.delete(c); drawMW(); e.preventDefault(); return; }
     const i=nearestAllowed(raw);
@@ -1117,8 +1122,8 @@ function drawMW(){
   document.getElementById("mw-mode-start").classList.toggle("on",MODE==="start");
   document.getElementById("mw-mode-exit").classList.toggle("on",MODE==="exit");
   document.getElementById("mw-mode-hint").textContent = MODE==="start"
-    ? "clicks set where the stack is today; windows show what fits the starting releases"
-    : "clicks set where the stack should land; only versions with a supported upgrade path from the start are offered";
+    ? "click sets a starting release · right-click or ⌘-click sets an exit release · windows show the start state"
+    : "right-click or ⌘-click (or plain click in this mode) sets an exit release — only versions with a supported upgrade path from the start are offered";
   MW_ORDER.forEach(c=>{
     const row=document.getElementById("mw-"+c), stops=MW[c], n=stops.length, cw=100/n;
     const aIdx=amap.has(c)?amap.get(c):null;
