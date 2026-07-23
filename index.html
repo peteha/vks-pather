@@ -136,6 +136,9 @@ window.addEventListener("error", function(e){
     transform:translateX(-50%) rotate(45deg)}
   .mwgo{position:absolute;top:16px;height:2px;background:linear-gradient(90deg,var(--accent),var(--mwexit));
     opacity:.85;border-radius:1px}
+  .mwhop{position:absolute;top:7px;width:16px;height:16px;border-radius:50%;background:var(--surface);
+    border:2px solid var(--mwexit);color:var(--mwexit);font-size:9px;font-weight:700;line-height:12px;
+    text-align:center;transform:translateX(-50%);z-index:1;cursor:default}
   .mwsummary{margin:14px 0 0;padding:12px 15px;background:var(--surface);border:1px solid var(--line);
     border-radius:10px;font-size:13.5px;color:var(--ink2)}
   .mwsummary b{color:var(--ink)}
@@ -1116,6 +1119,7 @@ function closedLanes(pins){
   }
   return out;
 }
+const PATHS={};
 function drawMW(){
   const amap=activeMap();
   const parts=[], startParts=[], exitParts=[];
@@ -1195,14 +1199,35 @@ function drawMW(){
     he.style.display=eIdx!==null?"block":"none";
     if(eIdx!==null){ he.style.left=((eIdx+0.5)*cw).toFixed(3)+"%"; exitParts.push(`${LABELS[c]||c} <span class="v">${esc(stops[eIdx].label)}</span>`); }
     const go=row.querySelector(".mwgo");
+    row.querySelectorAll(".mwhop").forEach(el=>el.remove());
+    PATHS[c]=null;
     if(sIdx!==null&&eIdx!==null&&eIdx!==sIdx){
       const a=Math.min(sIdx,eIdx), b=Math.max(sIdx,eIdx);
       go.style.display="block";
       go.style.left=((a+0.5)*cw).toFixed(3)+"%";
       go.style.width=((b-a)*cw).toFixed(3)+"%";
+      // numbered step badges at each intermediate hop of the shortest path
+      const p=pathBetween(c,sIdx,eIdx);
+      PATHS[c]=p;
+      if(p&&p.length>2){
+        const track=row.querySelector(".mwtrack");
+        let last=null;
+        for(let k=1;k<p.length-1;k++){
+          const si=stops.findIndex(s=>s.vers.includes(p[k]));
+          if(si<0) continue;                     // hop not on this slider (below coverage)
+          if(last&&last.si===si){ last.el.title+=`, then ${p[k]}`; continue; }
+          const el=document.createElement("div");
+          el.className="mwhop";
+          el.style.left=((si+0.5)*cw).toFixed(3)+"%";
+          el.textContent=k;
+          el.title=`step ${k}: upgrade to ${p[k]}`;
+          track.appendChild(el);
+          last={si,el};
+        }
+      }
     } else go.style.display="none";
   });
-  // journey report: shortest Compatible hop chain per lane with both endpoints
+  // journey report: numbered upgrade steps per lane with both endpoints
   const rep=[];
   MW_ORDER.forEach(c=>{
     const sIdx=START.has(c)?START.get(c):null, eIdx=EXIT.has(c)?EXIT.get(c):null;
@@ -1211,10 +1236,10 @@ function drawMW(){
     if(sIdx===null){ rep.push(`<span class="mwvia">•</span> ${L}: exit ${esc(MW[c][eIdx].label)} set — no starting release yet`); return; }
     if(eIdx===null){ rep.push(`<span class="mwvia">•</span> ${L}: starts at ${esc(MW[c][sIdx].label)} — no exit release yet`); return; }
     if(sIdx===eIdx){ rep.push(`<span class="s-ok">✓</span> ${L}: stays at ${esc(MW[c][sIdx].label)} (no change)`); return; }
-    const p=pathBetween(c,sIdx,eIdx);
-    rep.push(p
-      ? `<span class="s-ok">✓</span> ${L}: ${p.map(esc).join(" → ")} <span class="small">(${p.length-1} hop${p.length>2?"s":""}, every hop “Compatible” in the Upgrade matrix)</span>`
-      : `<span class="s-inc">⚠</span> ${L}: <b class="s-inc">no supported upgrade path</b> ${esc(MW[c][sIdx].label)} → ${esc(MW[c][eIdx].label)} in the Upgrade matrix`);
+    const p=PATHS[c];
+    if(!p){ rep.push(`<span class="s-inc">⚠</span> ${L}: <b class="s-inc">no supported upgrade path</b> ${esc(MW[c][sIdx].label)} → ${esc(MW[c][eIdx].label)} in the Upgrade matrix`); return; }
+    const steps=p.slice(0,-1).map((v,k)=>`<span class="pill" style="margin:0 2px 0 0">${k+1}</span>${esc(v)} → ${esc(p[k+1])}`);
+    rep.push(`<span class="s-ok">✓</span> <b>${L}</b> — ${p.length-1} step${p.length>2?"s":""}: ${steps.join(" &nbsp; ")} <span class="small">(every step “Compatible” in the Upgrade matrix)</span>`);
   });
   document.getElementById("mw-journey").innerHTML = rep.length
     ? `<div class="card" style="margin-top:12px"><h3>Upgrade journey — shortest supported path per layer</h3>
