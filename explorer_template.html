@@ -86,13 +86,24 @@ window.addEventListener("error", function(e){
   .mwrow{display:grid;grid-template-columns:200px 1fr;gap:18px;align-items:center;
     padding:12px 10px;border-radius:10px;cursor:pointer;border:1px solid transparent}
   .mwrow:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  :root{--mwexit:#8e5bd6}
+  @media (prefers-color-scheme: dark){ :root{--mwexit:#b18aec} }
   .mwrow.pinned{background:color-mix(in srgb, var(--accent) 10%, transparent);border-color:var(--accent)}
+  #mw-rows.exitmode .mwrow.pinned{background:color-mix(in srgb, var(--mwexit) 10%, transparent);border-color:var(--mwexit)}
   .mwrow.conflict{border-color:var(--warn);background:color-mix(in srgb, var(--warn) 9%, transparent)}
   .mwname b{display:block;font-size:14px}
   .mwname small{color:var(--muted);font-size:11px;letter-spacing:.05em;text-transform:uppercase}
   .mwrow.pinned .mwname b{color:var(--accent)}
-  .mwtag{display:none;font-size:10.5px;color:var(--accent);letter-spacing:.08em;text-transform:uppercase}
-  .mwrow.pinned .mwtag{display:inline}
+  #mw-rows.exitmode .mwrow.pinned .mwname b{color:var(--mwexit)}
+  .mwtag{display:none;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase}
+  .mwtag.start{color:var(--accent)} .mwtag.exit{color:var(--mwexit)}
+  .mwrow.has-start .mwtag.start{display:inline}
+  .mwrow.has-exit .mwtag.exit{display:inline}
+  .mwmode{display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap;align-items:center}
+  .mwmode button{font:inherit;font-size:12.5px;padding:6px 14px;border:1px solid var(--line);border-radius:20px;background:var(--chip);color:var(--ink);cursor:pointer}
+  .mwmode button.on{font-weight:700}
+  .mwmode button.on.mstart{border-color:var(--accent);color:var(--accent)}
+  .mwmode button.on.mexit{border-color:var(--mwexit);color:var(--mwexit)}
   .mwvia{font-size:10.5px;color:var(--warn);letter-spacing:.04em}
   .mwtrack{position:relative;height:56px}
   .mwtrack.dense{height:68px}
@@ -116,11 +127,14 @@ window.addEventListener("error", function(e){
   .mwlab.alt2{top:63px}
   .mwlab.in{color:var(--ink2);font-weight:600}
   .mwstop.off,.mwlab.off{opacity:.3}
-  .mwrow.pinned .mwlab.sel{color:var(--accent);font-weight:700}
+  .mwlab.sel{color:var(--accent) !important;font-weight:700;opacity:1}
+  .mwlab.sele{color:var(--mwexit) !important;font-weight:700;opacity:1}
   .mwhandle{position:absolute;top:6px;width:22px;height:22px;border-radius:50%;background:var(--accent);
     border:3px solid var(--surface);box-shadow:0 1px 4px rgba(0,0,0,.3);transform:translateX(-50%);
-    display:none;transition:left .1s ease;touch-action:none}
-  .mwrow.pinned .mwhandle{display:block;cursor:grab}
+    display:none;transition:left .1s ease;touch-action:none;cursor:grab}
+  .mwhandle.hexit{background:var(--mwexit)}
+  .mwgo{position:absolute;top:16px;height:2px;background:linear-gradient(90deg,var(--accent),var(--mwexit));
+    opacity:.85;border-radius:1px}
   .mwsummary{margin:14px 0 0;padding:12px 15px;background:var(--surface);border:1px solid var(--line);
     border-radius:10px;font-size:13.5px;color:var(--ink2)}
   .mwsummary b{color:var(--ink)}
@@ -910,25 +924,77 @@ function relVector(pc, si, c){
   RELCACHE.set(key,v);
   return v;
 }
-const MW_SEL={};
-MW_ORDER.forEach(c=>MW_SEL[c]=MW[c].length-1);
-const PIN=new Set();
+// Two independent pin sets: where the stack is today, and where it should land.
+const START=new Map(), EXIT=new Map();   // comp -> stop index
+let MODE="start";
+const activeMap=()=>MODE==="start"?START:EXIT;
 const tkrDef=MW.WorkloadK8s.findIndex(s=>s.label==="1.32.7");
-if(tkrDef>=0){ MW_SEL.WorkloadK8s=tkrDef; PIN.add("WorkloadK8s"); }
+if(tkrDef>=0) START.set("WorkloadK8s",tkrDef);
+
+// Compatible-only upgrade adjacency from the Upgrade matrix (per component),
+// for start -> exit reachability and shortest-path reporting.
+const ADJU={};
+C.forEach(c=>ADJU[c]={});
+for(const [ci,fi,ti,s] of DATA.edges){
+  if(ST[s]!=="Compatible") continue;
+  const c=C[ci], f=CAT[c][fi], t=CAT[c][ti];
+  (ADJU[c][f]=ADJU[c][f]||[]).push(t);
+}
+const REACHC=new Map();
+function reachFrom(c, sIdx){   // versions reachable from any build of the start stop
+  const k=c+":"+sIdx;
+  let seen=REACHC.get(k);
+  if(seen) return seen;
+  seen=new Set(MW[c][sIdx].vers);
+  const q=[...seen];
+  while(q.length){
+    const v=q.shift();
+    for(const nx of (ADJU[c][v]||[])) if(!seen.has(nx)){ seen.add(nx); q.push(nx); }
+  }
+  REACHC.set(k,seen);
+  return seen;
+}
+function pathBetween(c, sIdx, eIdx){  // shortest Compatible hop chain between stops
+  const toSet=new Set(MW[c][eIdx].vers);
+  let best=null;
+  for(const fv of MW[c][sIdx].vers){
+    if(toSet.has(fv)) return [fv];
+    const q=[[fv]], seen=new Set([fv]);
+    while(q.length){
+      const p=q.shift(), last=p[p.length-1];
+      if(best&&p.length>=best.length) break;
+      for(const nx of (ADJU[c][last]||[])){
+        if(seen.has(nx)) continue;
+        const np=[...p,nx];
+        if(toSet.has(nx)){ if(!best||np.length<best.length) best=np; break; }
+        seen.add(nx); q.push(np);
+      }
+    }
+  }
+  return best;
+}
 
 document.getElementById("sec-window").innerHTML = `
 <div class="card"><h3>The moving window — slide one component, see how far the rest can range</h3>
-<p class="small" style="margin:0 0 6px"><b>How to use:</b> click a version to pin it. The green bands show
-which versions of every other layer work with your pins. Dimmed versions can’t be picked — they don’t fit, or they
-would leave another layer with no options. Click a pin again to remove it; ← → moves it. Hover any dot to see why.
+<p class="small" style="margin:0 0 6px"><b>How to use:</b> pick <b>① Starting release</b> and click versions to set
+where the stack is today, then <b>② Exit release</b> to set where it should land. The green bands show which versions
+of every other layer work with the state you are editing. Dimmed versions can’t be picked — they don’t fit, they would
+leave another layer with no options, or (for exits) there is no supported upgrade path from the start. Click a marker
+again to remove it; ← → moves it. Hover any dot to see why. The journey card below lists the upgrade hops per layer.
 vSphere Supervisor is grouped by its Kubernetes version — ·8 = vSphere 8 builds, ·9 = vSphere 9 builds.
 Note: the matrix lists vCenter/ESX without patch letters, so every patch shares its line’s results — check the
 release notes for patch-level detail.</p>
+<div class="mwmode"><b style="font-size:12.5px">Plan:</b>
+  <button id="mw-mode-start" class="on mstart">① Starting release</button>
+  <button id="mw-mode-exit" class="mexit">② Exit release</button>
+  <span class="small" id="mw-mode-hint"></span></div>
 <div id="mw-rows"></div>
 <div id="mw-warn"></div>
+<div id="mw-journey"></div>
 <div class="row" style="margin:10px 0 0"><button id="mw-clear" style="font:inherit;font-size:12.5px;padding:5px 12px;border:1px solid var(--line);border-radius:7px;background:var(--chip);color:var(--ink);cursor:pointer">Clear all pins</button></div>
 <div class="mwlegend">
-  <span><i style="background:var(--accent)"></i>pinned — a version you chose</span>
+  <span><i style="background:var(--accent)"></i>starting release</span>
+  <span><i style="background:var(--mwexit)"></i>exit release</span>
   <span><i style="background:var(--good)"></i>Compatible (matrix cell)</span>
   <span><i style="background:var(--crit)"></i>Incompatible</span>
   <span><i style="background:var(--muted)"></i>Not Supported</span>
@@ -951,9 +1017,9 @@ MW_ORDER.forEach(c=>{
       <div class="mwlab${labCls(i)}" style="left:${x}" data-i="${i}">${esc(s.label)}</div>`;
   }).join("");
   row.innerHTML=`<div class="mwname"><b>${LABELS[c]||c}</b><small>${MW_ROLE[c]}</small>
-      <span class="mwtag">pinned</span> <span class="mwvia" id="mwvia-${c}"></span></div>
-    <div class="mwtrack${dense3?" dense3":dense?" dense":""}"><div class="mwlane"></div><div class="mwband"></div>${marks}
-      <div class="mwhandle"></div></div>`;
+      <span class="mwtag start">start</span> <span class="mwtag exit">exit</span> <span class="mwvia" id="mwvia-${c}"></span></div>
+    <div class="mwtrack${dense3?" dense3":dense?" dense":""}"><div class="mwlane"></div><div class="mwband"></div><div class="mwgo" style="display:none"></div>${marks}
+      <div class="mwhandle hstart"></div><div class="mwhandle hexit"></div></div>`;
   rowsEl.appendChild(row);
   const track=row.querySelector(".mwtrack");
   const idxAt=e=>{
@@ -968,41 +1034,45 @@ MW_ORDER.forEach(c=>{
   };
   row.addEventListener("pointerdown",e=>{
     if(!e.target.closest(".mwtrack")){ row.focus(); return; }
-    const raw=idxAt(e);
-    if(PIN.has(c)&&raw===MW_SEL[c]){ PIN.delete(c); drawMW(); e.preventDefault(); return; }
+    const m=activeMap(), raw=idxAt(e);
+    if(m.has(c)&&raw===m.get(c)){ m.delete(c); drawMW(); e.preventDefault(); return; }
     const i=nearestAllowed(raw);
     if(i===null) return;
-    MW_SEL[c]=i; PIN.add(c);
+    m.set(c,i);
     try{ row.setPointerCapture(e.pointerId); }catch(_){}
     row.dataset.drag="1";
     drawMW(); e.preventDefault();
   });
   row.addEventListener("pointermove",e=>{
-    if(row.dataset.drag==="1"&&PIN.has(c)){
+    const m=activeMap();
+    if(row.dataset.drag==="1"&&m.has(c)){
       const i=nearestAllowed(idxAt(e));
-      if(i!==null&&i!==MW_SEL[c]){ MW_SEL[c]=i; drawMW(); }
+      if(i!==null&&i!==m.get(c)){ m.set(c,i); drawMW(); }
     }
   });
   row.addEventListener("pointerup",()=>{ delete row.dataset.drag; });
   row.addEventListener("keydown",e=>{
+    const m=activeMap();
     if(e.key==="ArrowLeft"||e.key==="ArrowRight"){
       const dir=e.key==="ArrowRight"?1:-1;
       const els=row.querySelectorAll(".mwstop");
-      let i=MW_SEL[c]+dir;
+      let i=(m.has(c)?m.get(c):(dir>0?-1:n))+dir;
       while(i>=0&&i<n&&els[i].classList.contains("off")) i+=dir;
-      if(i>=0&&i<n){ MW_SEL[c]=i; PIN.add(c); drawMW(); }
+      if(i>=0&&i<n){ m.set(c,i); drawMW(); }
       e.preventDefault();
     }
     if(e.key===" "||e.key==="Enter"){
-      if(PIN.has(c)) PIN.delete(c);
-      else{ const i=nearestAllowed(MW_SEL[c]); if(i!==null){ MW_SEL[c]=i; PIN.add(c); } }
+      if(m.has(c)) m.delete(c);
+      else{ const i=nearestAllowed(n-1); if(i!==null) m.set(c,i); }
       drawMW(); e.preventDefault();
     }
   });
 });
-document.getElementById("mw-clear").onclick=()=>{ PIN.clear(); drawMW(); };
+document.getElementById("mw-clear").onclick=()=>{ START.clear(); EXIT.clear(); drawMW(); };
+document.getElementById("mw-mode-start").onclick=()=>{ MODE="start"; drawMW(); };
+document.getElementById("mw-mode-exit").onclick=()=>{ MODE="exit"; drawMW(); };
 
-function pinsExcept(c){ return [...PIN].filter(p=>p!==c).map(p=>[p, MW_SEL[p]]); }
+function pinsExcept(c){ return [...activeMap()].filter(([p])=>p!==c); }
 // combined status of stop i of component c against every pin (intersection):
 // excluded if Incompatible/Not Supported with ANY pin; in-window if Compatible
 // with at least one pin and excluded by none; unknown otherwise. Direct
@@ -1041,17 +1111,30 @@ function closedLanes(pins){
   return out;
 }
 function drawMW(){
-  const parts=[], pinParts=[];
-  const allPins=[...PIN].map(p=>[p,MW_SEL[p]]);
+  const amap=activeMap();
+  const parts=[], startParts=[], exitParts=[];
+  document.getElementById("mw-rows").classList.toggle("exitmode",MODE==="exit");
+  document.getElementById("mw-mode-start").classList.toggle("on",MODE==="start");
+  document.getElementById("mw-mode-exit").classList.toggle("on",MODE==="exit");
+  document.getElementById("mw-mode-hint").textContent = MODE==="start"
+    ? "clicks set where the stack is today; windows show what fits the starting releases"
+    : "clicks set where the stack should land; only versions with a supported upgrade path from the start are offered";
   MW_ORDER.forEach(c=>{
     const row=document.getElementById("mw-"+c), stops=MW[c], n=stops.length, cw=100/n;
-    const pinned=PIN.has(c), cons=pinsExcept(c);
-    row.classList.toggle("pinned",pinned);
-    row.setAttribute("aria-valuetext",pinned?stops[MW_SEL[c]].label:"unpinned");
+    const aIdx=amap.has(c)?amap.get(c):null;
+    const sIdx=START.has(c)?START.get(c):null, eIdx=EXIT.has(c)?EXIT.get(c):null;
+    const cons=pinsExcept(c);
+    row.classList.toggle("pinned",aIdx!==null);
+    row.classList.toggle("has-start",sIdx!==null);
+    row.classList.toggle("has-exit",eIdx!==null);
+    row.setAttribute("aria-valuetext",aIdx!==null?stops[aIdx].label:"unset");
     const res=stops.map((s,i)=>cons.length?comboStatus(c,i,cons):null);
     const rowAny=res.some(r=>r&&r.any);
-    // selectable = in-window vs the pins AND would not close any other lane
+    const reach=(MODE==="exit"&&sIdx!==null)?reachFrom(c,sIdx):null;
+    // selectable = in-window vs this state's pins, not lane-closing, and (for
+    // exits) reachable from the lane's starting release via the Upgrade matrix
     const allow=stops.map((s,i)=>{
+      if(reach&&!stops[i].vers.some(v=>reach.has(v))) return {ok:false, closes:[], unreach:true};
       const base=(!cons.length||!rowAny)?true:!!(res[i]&&res[i].ok);
       if(!base) return {ok:false, closes:[]};
       const closes=closedLanes([...cons,[c,i]]);
@@ -1066,6 +1149,8 @@ function drawMW(){
       let t=stops[i].vers.join(", ")
         +(stops[i].line&&stops[i].line!==stops[i].label?` — interop verdicts via the ${stops[i].line} matrix row`:"")
         +(r&&r.notes.length?"\n"+r.notes.join("\n"):"");
+      if(allow[i].unreach)
+        t+=`\n⚠ No supported upgrade path from ${LABELS[c]||c} ${stops[sIdx].label} in the Upgrade matrix.`;
       if(allow[i].closes.length)
         t+=`\n⚠ Pinning this would leave ${allow[i].closes.map(l=>LABELS[l]||l).join(" and ")} with no compatible version — unsupported solution.`;
       el.title=t;
@@ -1074,10 +1159,10 @@ function drawMW(){
       const r=res[i];
       el.classList.toggle("in",!!(r&&r.ok)&&allow[i].ok);
       el.classList.toggle("off",!allow[i].ok);
-      el.classList.toggle("sel",pinned&&i===MW_SEL[c]);
+      el.classList.toggle("sel",i===sIdx);
+      el.classList.toggle("sele",i===eIdx);
     });
     const band=row.querySelector(".mwband");
-    // band is dashed-derived only when EVERY in-window version is inference-only
     const bandDerived=okIdx.length?okIdx.every(i=>res[i].derived):false;
     if(okIdx.length){
       const lo=okIdx[0], hi=okIdx[okIdx.length-1];
@@ -1085,38 +1170,68 @@ function drawMW(){
       band.classList.toggle("derived",bandDerived);
       band.style.left=(lo*cw+cw*0.15).toFixed(3)+"%";
       band.style.width=((hi-lo+1)*cw-cw*0.3).toFixed(3)+"%";
-      if(!pinned) parts.push(`${LABELS[c]||c} <span class="v">${esc(stops[lo].label)}${hi>lo?"–"+esc(stops[hi].label):""}</span>${bandDerived?" <span class='mwvia'>(derived)</span>":""}`);
+      if(aIdx===null) parts.push(`${LABELS[c]||c} <span class="v">${esc(stops[lo].label)}${hi>lo?"–"+esc(stops[hi].label):""}</span>${bandDerived?" <span class='mwvia'>(derived)</span>":""}`);
     } else {
       band.classList.add("none");
-      if(!pinned&&cons.length) parts.push(`${LABELS[c]||c} <span class="v">${rowAny?"none":"no matrix data"}</span>`);
+      if(aIdx===null&&cons.length) parts.push(`${LABELS[c]||c} <span class="v">${rowAny?"none":"no matrix data"}</span>`);
     }
     const rowHasDirect=cons.some(([pc])=>COVER.has(pc+"|"+c));
     document.getElementById("mwvia-"+c).textContent =
       (cons.length&&!rowHasDirect)?"derived — no direct matrix rows vs pinned components":"";
-    if(pinned){
-      row.querySelector(".mwhandle").style.left=((MW_SEL[c]+0.5)*cw).toFixed(3)+"%";
-      pinParts.push(`${LABELS[c]||c} <span class="v">${esc(stops[MW_SEL[c]].label)}</span>`);
-    }
+    const hs=row.querySelector(".mwhandle.hstart"), he=row.querySelector(".mwhandle.hexit");
+    hs.style.display=sIdx!==null?"block":"none";
+    if(sIdx!==null){ hs.style.left=((sIdx+0.5)*cw).toFixed(3)+"%"; startParts.push(`${LABELS[c]||c} <span class="v">${esc(stops[sIdx].label)}</span>`); }
+    he.style.display=eIdx!==null?"block":"none";
+    if(eIdx!==null){ he.style.left=((eIdx+0.5)*cw).toFixed(3)+"%"; exitParts.push(`${LABELS[c]||c} <span class="v">${esc(stops[eIdx].label)}</span>`); }
+    const go=row.querySelector(".mwgo");
+    if(sIdx!==null&&eIdx!==null&&eIdx!==sIdx){
+      const a=Math.min(sIdx,eIdx), b=Math.max(sIdx,eIdx);
+      go.style.display="block";
+      go.style.left=((a+0.5)*cw).toFixed(3)+"%";
+      go.style.width=((b-a)*cw).toFixed(3)+"%";
+    } else go.style.display="none";
   });
-  // defensive banner: with look-ahead this should be unreachable, but if the
-  // current pin set nevertheless closes a lane, say so loudly and name the fix
+  // journey report: shortest Compatible hop chain per lane with both endpoints
+  const rep=[];
+  MW_ORDER.forEach(c=>{
+    const sIdx=START.has(c)?START.get(c):null, eIdx=EXIT.has(c)?EXIT.get(c):null;
+    if(sIdx===null&&eIdx===null) return;
+    const L=LABELS[c]||c;
+    if(sIdx===null){ rep.push(`<span class="mwvia">•</span> ${L}: exit ${esc(MW[c][eIdx].label)} set — no starting release yet`); return; }
+    if(eIdx===null){ rep.push(`<span class="mwvia">•</span> ${L}: starts at ${esc(MW[c][sIdx].label)} — no exit release yet`); return; }
+    if(sIdx===eIdx){ rep.push(`<span class="s-ok">✓</span> ${L}: stays at ${esc(MW[c][sIdx].label)} (no change)`); return; }
+    const p=pathBetween(c,sIdx,eIdx);
+    rep.push(p
+      ? `<span class="s-ok">✓</span> ${L}: ${p.map(esc).join(" → ")} <span class="small">(${p.length-1} hop${p.length>2?"s":""}, every hop “Compatible” in the Upgrade matrix)</span>`
+      : `<span class="s-inc">⚠</span> ${L}: <b class="s-inc">no supported upgrade path</b> ${esc(MW[c][sIdx].label)} → ${esc(MW[c][eIdx].label)} in the Upgrade matrix`);
+  });
+  document.getElementById("mw-journey").innerHTML = rep.length
+    ? `<div class="card" style="margin-top:12px"><h3>Upgrade journey — shortest supported path per layer</h3>
+       ${rep.map(r=>`<div style="margin:4px 0;font-size:13px">${r}</div>`).join("")}
+       <p class="small" style="margin:8px 0 0">Paths use only “Compatible” cells of the Upgrade matrix, independently per layer.
+       Cross-layer ordering (what must move before what) is the Roadmap tab's domain — validate the sequence there.</p></div>`
+    : "";
+  // defensive banner for the active state's pin set
+  const allPins=[...amap];
   const closed=closedLanes(allPins), culprits=new Set();
   document.getElementById("mw-warn").innerHTML = closed.map(c=>{
-    const fixes=[...PIN].filter(p=>{
+    const fixes=[...amap.keys()].filter(p=>{
       const pins2=allPins.filter(([q])=>q!==p);
       return !pins2.length || MW[c].some((s,i)=>comboStatus(c,i,pins2).ok);
     });
     fixes.forEach(p=>culprits.add(p));
     const fixTxt=fixes.length
-      ? "release "+fixes.map(p=>`${LABELS[p]||p} ${esc(MW[p][MW_SEL[p]].label)}`).join(" or ")
+      ? "release "+fixes.map(p=>`${LABELS[p]||p} ${esc(MW[p][amap.get(p)].label)}`).join(" or ")
       : "release one or more pins";
-    return `<div class="flag"><b>Unsupported combination:</b> no ${LABELS[c]||c} version is Compatible with all current pins — every layer must keep at least one option for the stack to be supportable. To fix: ${fixTxt}.</div>`;
+    return `<div class="flag"><b>Unsupported ${MODE} state:</b> no ${LABELS[c]||c} version is Compatible with all its pins — every layer must keep at least one option. To fix: ${fixTxt}.</div>`;
   }).join("");
   MW_ORDER.forEach(c=>document.getElementById("mw-"+c).classList.toggle("conflict",culprits.has(c)));
   document.getElementById("mw-summary").innerHTML =
-    (pinParts.length?`<b>Pinned:</b> ${pinParts.join(" · ")}.`:`<b>Nothing pinned</b> — click any version to start.`)
-    +(parts.length?` <b>Compatible windows:</b> ${parts.join(" · ")}.`:"")
-    +(closed.length?` <b class="s-inc">⚠ Unsupported — ${closed.map(c=>LABELS[c]||c).join(", ")} closed.</b>`:"");
+    (startParts.length?`<b style="color:var(--accent)">Start:</b> ${startParts.join(" · ")}. `:"")
+    +(exitParts.length?`<b style="color:var(--mwexit)">Exit:</b> ${exitParts.join(" · ")}. `:"")
+    +(!startParts.length&&!exitParts.length?"<b>Nothing set</b> — click any version to set the starting release. ":"")
+    +(parts.length?`<b>Windows (${MODE} state):</b> ${parts.join(" · ")}.`:"")
+    +(closed.length?` <b class="s-inc">⚠ ${MODE} state unsupported — ${closed.map(c=>LABELS[c]||c).join(", ")} closed.</b>`:"");
 }
 drawMW();
 })();
