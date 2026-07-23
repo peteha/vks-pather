@@ -65,6 +65,18 @@ Interoperability Matrix</a>, exported <b><span class="asof">16 Jul 2026</span></
 for a component pair, the tool shows a clearly marked <b>derived</b> window inferred through an intermediate component —
 labelled inference, not a matrix cell. The matrix is a point-in-time snapshot: re-export it and re-verify before relying
 on a combination. Independent analysis — not Broadcom guidance; not affiliated with Broadcom Inc.</p></div>
+<div class="card"><h3>Three ways to use it</h3>
+<p style="font-size:13px;color:var(--ink2);margin:0 0 6px"><b>“The developers need Kubernetes X.”</b> (Platform Engineer)
+— Click your current versions as starting releases, then right-click the requested TKr as the exit. The impact card
+tells you which infrastructure layers can stay and which must move — with the nearest supported target and the hops to
+get there.</p>
+<p style="font-size:13px;color:var(--ink2);margin:0 0 6px"><b>“Security says patch vCenter.”</b> (VM administrator)
+— Click the current stack as starting releases, right-click the required vCenter as the exit. The impact card shows
+what the patch does to the Kubernetes side: which Supervisor, VKS and workload-cluster versions survive it, and what
+has to be upgraded first.</p>
+<p style="font-size:13px;color:var(--ink2);margin:0"><b>“I need change documentation.”</b> (Platform Engineer)
+— Once start and exit are set, <b>Save assessment</b> exports the states, per-layer upgrade steps and impact verdicts
+as HTML or RTF (opens in Google Docs / Word) — generated locally, ready to attach to a change record.</p></div>
 <section id="sec-window" style="display:block"></section>
 </main>
 <footer style="padding:0 24px 36px;max-width:1200px">

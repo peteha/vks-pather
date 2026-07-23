@@ -996,7 +996,11 @@ release notes for patch-level detail.</p>
 <div id="mw-rows"></div>
 <div id="mw-warn"></div>
 <div id="mw-journey"></div>
-<div class="row" style="margin:10px 0 0"><button id="mw-clear" style="font:inherit;font-size:12.5px;padding:5px 12px;border:1px solid var(--line);border-radius:7px;background:var(--chip);color:var(--ink);cursor:pointer">Clear all pins</button></div>
+<div class="row" style="margin:10px 0 0">
+  <button id="mw-clear" style="font:inherit;font-size:12.5px;padding:5px 12px;border:1px solid var(--line);border-radius:7px;background:var(--chip);color:var(--ink);cursor:pointer">Clear all pins</button>
+  <button id="mw-save-html" title="Change-documentation export: start/exit state, steps and impact per layer — generated locally, nothing is sent anywhere" style="font:inherit;font-size:12.5px;padding:5px 12px;border:1px solid var(--line);border-radius:7px;background:var(--chip);color:var(--ink);cursor:pointer">Save assessment (HTML)</button>
+  <button id="mw-save-rtf" title="Opens natively in Google Docs / Word / Pages — generated locally, nothing is sent anywhere" style="font:inherit;font-size:12.5px;padding:5px 12px;border:1px solid var(--line);border-radius:7px;background:var(--chip);color:var(--ink);cursor:pointer">Save for Google Docs / Word (.rtf)</button>
+</div>
 <div class="mwlegend">
   <span><i style="background:var(--accent)"></i>starting release</span>
   <span><i style="background:var(--mwexit)"></i>exit release</span>
@@ -1120,6 +1124,64 @@ function closedLanes(pins){
   return out;
 }
 const PATHS={};
+// One report generator feeds the on-page card AND the exports: each item has
+// html (card) and text (documents).
+function nearestFix(c, sIdx, exitPins){
+  const reach=reachFrom(c,sIdx);
+  let best=null;
+  MW[c].forEach((s,i)=>{
+    if(i===sIdx||!s.vers.some(v=>reach.has(v))) return;
+    if(!comboStatus(c,i,exitPins).ok) return;
+    const p=pathBetween(c,sIdx,i);
+    if(p&&(!best||p.length<best.p.length)) best={i,p};
+  });
+  return best;
+}
+function buildReport(){
+  const items=[];
+  const exitPins=[...EXIT];
+  const add=(icon,html,text)=>items.push({html:icon+" "+html, text});
+  MW_ORDER.forEach(c=>{
+    const sIdx=START.has(c)?START.get(c):null, eIdx=EXIT.has(c)?EXIT.get(c):null;
+    if(sIdx===null&&eIdx===null) return;
+    const L=LABELS[c]||c;
+    const OK='<span class="s-ok">✓</span>', WARN='<span class="s-inc">⚠</span>', DOT='<span class="mwvia">•</span>';
+    if(sIdx===null){ add(DOT,`${L}: exit ${esc(MW[c][eIdx].label)} set — no starting release yet`,
+      `• ${L}: exit ${MW[c][eIdx].label} set — no starting release yet`); return; }
+    const sL=MW[c][sIdx].label;
+    if(eIdx!==null){
+      if(sIdx===eIdx){ add(OK,`${L}: stays at ${esc(sL)} (no change)`,`OK ${L}: stays at ${sL} (no change)`); return; }
+      const p=PATHS[c];
+      if(!p){ add(WARN,`${L}: <b class="s-inc">no supported upgrade path</b> ${esc(sL)} → ${esc(MW[c][eIdx].label)} in the Upgrade matrix`,
+        `WARNING ${L}: no supported upgrade path ${sL} -> ${MW[c][eIdx].label} in the Upgrade matrix`); return; }
+      const stepsH=p.slice(0,-1).map((v,k)=>`<span class="pill" style="margin:0 2px 0 0">${k+1}</span>${esc(v)} → ${esc(p[k+1])}`);
+      const stepsT=p.slice(0,-1).map((v,k)=>`${k+1}. ${v} -> ${p[k+1]}`);
+      add(OK,`<b>${L}</b> — ${p.length-1} step${p.length>2?"s":""}: ${stepsH.join(" &nbsp; ")} <span class="small">(every step “Compatible” in the Upgrade matrix)</span>`,
+        `OK ${L} — ${p.length-1} step(s): ${stepsT.join("  ")} (every step Compatible in the Upgrade matrix)`);
+      return;
+    }
+    // start set, no exit: impact of the exit pins on this lane
+    if(!exitPins.length){ add(DOT,`${L}: starts at ${esc(sL)} — no exit release yet`,`• ${L}: starts at ${sL} — no exit release yet`); return; }
+    const cons=exitPins.filter(([p])=>p!==c);
+    if(!cons.length) return;
+    const r=comboStatus(c,sIdx,cons);
+    if(r.ok){ add(OK,`${L}: <b>can stay</b> at ${esc(sL)} — compatible with the exit state`,
+      `OK ${L}: can stay at ${sL} — compatible with the exit state`); return; }
+    if(!r.any){ add(DOT,`${L}: no matrix data for ${esc(sL)} against the exit state — verify manually`,
+      `• ${L}: no matrix data for ${sL} against the exit state — verify manually`); return; }
+    const verdict=r.cls==="inc"?"Incompatible":"Not Supported";
+    const fix=nearestFix(c,sIdx,cons);
+    if(fix){
+      const fL=MW[c][fix.i].label, hops=fix.p.length-1;
+      add(WARN,`${L}: <b class="s-inc">must move</b> — ${esc(sL)} is ${verdict} with the exit state; nearest supported target: <b>${esc(fL)}</b> (${hops} hop${hops>1?"s":""}: ${fix.p.map(esc).join(" → ")})`,
+        `WARNING ${L}: must move — ${sL} is ${verdict} with the exit state; nearest supported target: ${fL} (${hops} hop(s): ${fix.p.join(" -> ")})`);
+    } else {
+      add(WARN,`${L}: <b class="s-inc">must move, but no reachable version fits the exit state</b> — ${esc(sL)} is ${verdict} and no upgrade target is Compatible with the exit pins`,
+        `WARNING ${L}: must move, but no reachable version fits the exit state — ${sL} is ${verdict}`);
+    }
+  });
+  return items;
+}
 function drawMW(){
   const amap=activeMap();
   const parts=[], startParts=[], exitParts=[];
@@ -1227,23 +1289,12 @@ function drawMW(){
       }
     } else go.style.display="none";
   });
-  // journey report: numbered upgrade steps per lane with both endpoints
-  const rep=[];
-  MW_ORDER.forEach(c=>{
-    const sIdx=START.has(c)?START.get(c):null, eIdx=EXIT.has(c)?EXIT.get(c):null;
-    if(sIdx===null&&eIdx===null) return;
-    const L=LABELS[c]||c;
-    if(sIdx===null){ rep.push(`<span class="mwvia">•</span> ${L}: exit ${esc(MW[c][eIdx].label)} set — no starting release yet`); return; }
-    if(eIdx===null){ rep.push(`<span class="mwvia">•</span> ${L}: starts at ${esc(MW[c][sIdx].label)} — no exit release yet`); return; }
-    if(sIdx===eIdx){ rep.push(`<span class="s-ok">✓</span> ${L}: stays at ${esc(MW[c][sIdx].label)} (no change)`); return; }
-    const p=PATHS[c];
-    if(!p){ rep.push(`<span class="s-inc">⚠</span> ${L}: <b class="s-inc">no supported upgrade path</b> ${esc(MW[c][sIdx].label)} → ${esc(MW[c][eIdx].label)} in the Upgrade matrix`); return; }
-    const steps=p.slice(0,-1).map((v,k)=>`<span class="pill" style="margin:0 2px 0 0">${k+1}</span>${esc(v)} → ${esc(p[k+1])}`);
-    rep.push(`<span class="s-ok">✓</span> <b>${L}</b> — ${p.length-1} step${p.length>2?"s":""}: ${steps.join(" &nbsp; ")} <span class="small">(every step “Compatible” in the Upgrade matrix)</span>`);
-  });
+  // journey & impact report: upgrade steps for lanes with both endpoints, and
+  // an impact verdict (can stay / must move) for start-only lanes vs the exit pins
+  const rep=buildReport();
   document.getElementById("mw-journey").innerHTML = rep.length
-    ? `<div class="card" style="margin-top:12px"><h3>Upgrade journey — shortest supported path per layer</h3>
-       ${rep.map(r=>`<div style="margin:4px 0;font-size:13px">${r}</div>`).join("")}
+    ? `<div class="card" style="margin-top:12px"><h3>Upgrade journey &amp; impact — per layer</h3>
+       ${rep.map(r=>`<div style="margin:4px 0;font-size:13px">${r.html}</div>`).join("")}
        <p class="small" style="margin:8px 0 0">Paths use only “Compatible” cells of the Upgrade matrix, independently per layer.
        Cross-layer ordering (what must move before what) is the Roadmap tab's domain — validate the sequence there.</p></div>`
     : "";
@@ -1270,6 +1321,69 @@ function drawMW(){
     +(closed.length?` <b class="s-inc">⚠ ${MODE} state unsupported — ${closed.map(c=>LABELS[c]||c).join(", ")} closed.</b>`:"");
 }
 drawMW();
+
+// ---- change-documentation exports (self-contained: generated in-browser) ----
+function mwSave(content, type, filename){
+  const blob=new Blob([content],{type});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(a.href);
+}
+function mwStateLists(){
+  const line=(map)=>MW_ORDER.filter(c=>map.has(c)).map(c=>[LABELS[c]||c, MW[c][map.get(c)].label]);
+  return {start:line(START), exit:line(EXIT)};
+}
+function mwAssessHTML(){
+  const {start,exit}=mwStateLists();
+  const rep=buildReport();
+  const tbl=rows=>rows.length
+    ?`<table><tbody>${rows.map(([k,v])=>`<tr><td>${k}</td><td><b>${esc(v)}</b></td></tr>`).join("")}</tbody></table>`
+    :"<p>(none set)</p>";
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>VCF - VKS change assessment</title>
+<style>body{font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;color:#111;max-width:860px;margin:32px auto;padding:0 20px}
+h1{font-size:20px}h2{font-size:16px;margin-top:26px}
+table{border-collapse:collapse}td{border:1px solid #ccc;padding:5px 10px;font-size:13px}
+p{margin:6px 0}.src{color:#555;font-size:12.5px}li{margin:5px 0;font-size:13.5px}</style></head><body>
+<h1>VCF - VKS change assessment</h1>
+<p class="src">Data source: official Broadcom Product Interoperability Matrix, exported ${esc(DATA.asof||"16 Jul 2026")}.
+Impact statements derive from matrix cells (interop windows) and Compatible upgrade edges; sequencing commentary is the
+author’s interpretation, not Broadcom guidance. Cross-layer ordering must be validated separately.</p>
+<h2>Starting releases (current state)</h2>${tbl(start)}
+<h2>Exit releases (target state)</h2>${tbl(exit)}
+<h2>Per-layer journey and impact</h2>
+${rep.length?`<ul>${rep.map(r=>`<li>${esc(r.text)}</li>`).join("")}</ul>`:"<p>No layers assessed — set starting and exit releases first.</p>"}
+</body></html>`;
+}
+function mwRtfEsc(s){ return String(s).replace(/[\\{}]/g, m=>"\\"+m)
+  .replace(/[\u0080-\uffff]/g, ch=>{ const c=ch.charCodeAt(0); return "\\u"+(c>32767?c-65536:c)+"?"; }); }
+function mwAssessRTF(){
+  const {start,exit}=mwStateLists();
+  const rep=buildReport();
+  const R=["{\\rtf1\\ansi\\deff0{\\fonttbl{\\f0\\fswiss Helvetica;}}\\f0\\fs22 "];
+  const H=(t,fs)=>R.push("{\\b\\fs"+fs+" "+mwRtfEsc(t)+"}\\par\\par ");
+  H("VCF - VKS change assessment",34);
+  R.push("{\\fs18 "+mwRtfEsc("Data source: official Broadcom Product Interoperability Matrix, exported "
+    +(DATA.asof||"16 Jul 2026")+". Impact statements derive from matrix cells and Compatible upgrade edges; "
+    +"sequencing commentary is the author’s interpretation, not Broadcom guidance.")+"}\\par\\par ");
+  const tbl=(title,rows)=>{
+    H(title,26);
+    if(!rows.length){ R.push("(none set)\\par\\par "); return; }
+    rows.forEach(([k,v])=>R.push("\\trowd\\trgaph108\\cellx4600\\cellx9360 "
+      +mwRtfEsc(k)+"\\cell {\\b "+mwRtfEsc(v)+"}\\cell\\row "));
+    R.push("\\pard\\par ");
+  };
+  tbl("Starting releases (current state)",start);
+  tbl("Exit releases (target state)",exit);
+  H("Per-layer journey and impact",26);
+  rep.forEach(r=>R.push(mwRtfEsc(r.text)+"\\par\\par "));
+  if(!rep.length) R.push("No layers assessed — set starting and exit releases first.\\par ");
+  R.push("}");
+  return R.join("");
+}
+document.getElementById("mw-save-html").onclick=()=>mwSave(mwAssessHTML(),"text/html;charset=utf-8","vks-change-assessment.html");
+document.getElementById("mw-save-rtf").onclick=()=>mwSave(mwAssessRTF(),"application/rtf","vks-change-assessment.rtf");
 })();
 //MW-JS-END
 </script>
